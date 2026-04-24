@@ -9,3 +9,12 @@ config.status
 configure
 rkdeveloptool
 rkdeveloptool*bz2
+
+# ASIAIR backup images (large binary dumps, never commit)
+asiair-backup/
+*.bin
+
+# Hardware artifacts (firmware blobs, kernel modules, compiled device trees)
+*.ko
+*.dtb
+*.hcd
