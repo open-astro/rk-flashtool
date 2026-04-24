@@ -1,6 +1,6 @@
 dnl Copyright (C) 2017  Trevor Woerner <twoerner@gmail.com>
 
-AC_INIT([Rockchip rkdeveloptool], 1.32, [Eddie Cai <eddie.cai.linux@gmail.com>], rkdeveloptool)
+AC_INIT([rk-flashtool], 1.32, [https://github.com/open-astro/rk-flashtool/issues], rk-flashtool)
 AC_PREREQ([2.68])
 AC_CONFIG_SRCDIR(main.cpp)
 AC_CONFIG_AUX_DIR(cfg)

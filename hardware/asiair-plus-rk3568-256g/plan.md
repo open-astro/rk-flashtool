@@ -40,14 +40,14 @@ before any of this work is possible.
 - [x] Transfer backups to local machine (7.7 GB total in asiair-backup/)
 - [ ] Test: confirm backup can be written back with dd (dry run on offset check)
 
-## Phase 3: rkdeveloptool RK3568 Support (Brick Recovery Safety Net)
+## Phase 3: rk-flashtool RK3568 Support (Brick Recovery Safety Net)
 
 - [ ] Add RK3568 USB PID (0x350b) to RKScan.cpp VID/PID table
 - [ ] Add RK3568 device type to DefineHeader.h enum
 - [ ] Add RK3568 udev rule to 99-rk-rockusb.rules
-- [ ] Build rkdeveloptool with RK3568 support
+- [ ] Build rk-flashtool with RK3568 support
 - [ ] Obtain RK3568 MiniLoaderAll.bin (from Rockchip repo or extract from stock)
-- [ ] Test: verify rkdeveloptool detects RK3568 in Maskrom mode
+- [ ] Test: verify rk-flashtool detects RK3568 in Maskrom mode
 - [ ] Document how to enter Maskrom mode on ASIAIR Plus (button/pin short method)
 
 ## Phase 4: U-Boot
@@ -125,10 +125,10 @@ before any of this work is possible.
 ## Phase 8: Restore & Recovery Documentation
 
 - [ ] Document full restore procedure (dd-based, partition by partition)
-- [ ] Document rkdeveloptool Maskrom recovery procedure
+- [ ] Document rk-flashtool Maskrom recovery procedure
 - [ ] Create one-command restore script
 - [ ] Test: full restore to stock firmware from backup
-- [ ] Test: full restore from bricked state via rkdeveloptool
+- [ ] Test: full restore from bricked state via rk-flashtool
 
 ---
 

@@ -1,6 +1,8 @@
-# rkdeveloptool
+# rk-flashtool
 
-A simple way to read/write RockChip devices over USB (rockusb protocol).
+A maintained fork of Rockchip's `rkdeveloptool` for reading/writing Rockchip devices over USB (rockusb protocol). Maintained by [open-astro](https://github.com/open-astro) with a focus on ASIAIR Plus (RK3568) support.
+
+Originally forked from [rockchip-linux/rkdeveloptool](https://github.com/rockchip-linux/rkdeveloptool) (upstream inactive since 2023).
 
 ## Build & Install
 
@@ -28,7 +30,7 @@ sudo udevadm control --reload-rules
 ## Usage
 
 ```
-rkdeveloptool -h
+rk-flashtool -h
 ```
 
 ### Common Commands
@@ -51,9 +53,9 @@ rkdeveloptool -h
 ### Example: Flash a kernel image
 
 ```bash
-sudo ./rkdeveloptool db RKXXLoader.bin      # download bootloader to device
-sudo ./rkdeveloptool wl 0x8000 kernel.img   # write kernel (0x8000 = sector offset)
-sudo ./rkdeveloptool rd                     # reset device
+sudo ./rk-flashtool db RKXXLoader.bin      # download bootloader to device
+sudo ./rk-flashtool wl 0x8000 kernel.img   # write kernel (0x8000 = sector offset)
+sudo ./rk-flashtool rd                     # reset device
 ```
 
 ## ASIAIR Plus RK3568 Support

@@ -1,8 +1,8 @@
 # Project name
-set (PROJECT_NAME "rkDevelopTool_Mac")
+set (PROJECT_NAME "rk-flashtool")
 
 # The version number.
-set (RKDevelopTool_Mac_PACKAGE_VERSION "1.3")
+set (rk_flashtool_PACKAGE_VERSION "1.32")
 
 file (GLOB LOCAL_CPP_FILES *.cpp)
 set (SOURCE_FILES ${SOURCE_FILES} ${LOCAL_CPP_FILES})
