@@ -102,6 +102,8 @@ typedef struct {
 #define CHIP_RK30B              "RK30B"
 #define CHIP_RK31               "RK31"
 #define CHIP_RK32               "RK32"
+#define CHIP_RK33               "RK33"
+#define CHIP_RK35               "RK35"
 
 typedef enum {
 	ENTRY_471       =1,

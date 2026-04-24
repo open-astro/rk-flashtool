@@ -488,6 +488,10 @@ bool CRKDevice::CheckChip()
 			curDeviceType = RKNANO_DEVICE;
 		} else if (*pValue == 0x4E4F5243) {
 			curDeviceType = RKCROWN_DEVICE;
+		} else if (*pValue == 0x33353638) {
+			curDeviceType = RK35_DEVICE;
+		} else if (*pValue == 0x33353636) {
+			curDeviceType = RK35_DEVICE;
 		}
 
 		if (curDeviceType == m_device){

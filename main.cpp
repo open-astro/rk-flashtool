@@ -1531,6 +1531,10 @@ static inline uint32_t getChipType(const char* chip) {
 		chipType = RK31_DEVICE;
 	} else if (!strcmp(chip, CHIP_RK32)) {
 		chipType = RK32_DEVICE;
+	} else if (!strcmp(chip, CHIP_RK33)) {
+		chipType = RK33_DEVICE;
+	} else if (!strcmp(chip, CHIP_RK35)) {
+		chipType = RK35_DEVICE;
 	} else {
 		chipType = convertChipType(chip + 2);
 	}

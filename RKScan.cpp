@@ -165,6 +165,26 @@ void CRKScan::SetVidPid(USHORT mscVid, USHORT mscPid)
 	config.usVid = 0x2207;
 	m_deviceConfigSet.push_back(config);
 
+	config.emDeviceType = RK33_DEVICE;
+	config.usPid = 0x330A;
+	config.usVid = 0x2207;
+	m_deviceConfigSet.push_back(config);
+
+	config.emDeviceType = RK33_DEVICE;
+	config.usPid = 0x330C;
+	config.usVid = 0x2207;
+	m_deviceConfigSet.push_back(config);
+
+	config.emDeviceType = RK35_DEVICE;
+	config.usPid = 0x350A;
+	config.usVid = 0x2207;
+	m_deviceConfigSet.push_back(config);
+
+	config.emDeviceType = RK35_DEVICE;
+	config.usPid = 0x350B;
+	config.usVid = 0x2207;
+	m_deviceConfigSet.push_back(config);
+
 	m_deviceMscConfigSet.clear();
 
 	config.emDeviceType = RKNONE_DEVICE;

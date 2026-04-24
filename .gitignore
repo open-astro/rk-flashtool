@@ -9,6 +9,10 @@ config.status
 configure
 rkdeveloptool
 rkdeveloptool*bz2
+rk-flashtool
+log/
+cfg/config.h
+cfg/stamp-h1
 
 # ASIAIR backup images (large binary dumps, never commit)
 asiair-backup/

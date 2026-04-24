@@ -42,13 +42,14 @@ before any of this work is possible.
 
 ## Phase 3: rk-flashtool RK3568 Support (Brick Recovery Safety Net)
 
-- [ ] Add RK3568 USB PID (0x350b) to RKScan.cpp VID/PID table
-- [ ] Add RK3568 device type to DefineHeader.h enum
-- [ ] Add RK3568 udev rule to 99-rk-rockusb.rules
-- [ ] Build rk-flashtool with RK3568 support
+- [x] Add RK3568 USB PID (0x350b) to RKScan.cpp VID/PID table
+- [x] Add RK3568 device type to DefineHeader.h enum
+- [x] Add RK3568 udev rule to 99-rk-rockusb.rules
+- [x] Build rk-flashtool with RK3568 support
 - [ ] Obtain RK3568 MiniLoaderAll.bin (from Rockchip repo or extract from stock)
-- [ ] Test: verify rk-flashtool detects RK3568 in Maskrom mode
-- [ ] Document how to enter Maskrom mode on ASIAIR Plus (button/pin short method)
+- [x] Test: verify rk-flashtool detects RK3568 (reports PID 0x350a in Loader mode, chip info "3568")
+- [x] Document rk-flashtool usage, restore procedure, and recovery guide (flashtool-recovery.md)
+- [ ] Document how to enter Maskrom mode on ASIAIR Plus (needs PCB inspection for eMMC CLK pin)
 
 ## Phase 4: U-Boot
 
@@ -137,6 +138,7 @@ before any of this work is possible.
 | File | Description |
 |------|-------------|
 | plan.md | This file — project plan and progress tracker |
+| flashtool-recovery.md | rk-flashtool usage, restore procedure, Maskrom recovery |
 | inventory.md | Complete hardware inventory with GPIO maps |
 | asiair-plus.dts | Stock device tree source (decompiled from live system) |
 | asiair-plus.dtb | Stock device tree blob (binary) |
