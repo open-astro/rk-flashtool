@@ -53,14 +53,15 @@ before any of this work is possible.
 
 ## Phase 4: U-Boot
 
-- [ ] Decide: Rockchip U-Boot fork vs mainline U-Boot
-- [ ] Set up cross-compilation toolchain (aarch64-linux-gnu-gcc)
-- [ ] Create ASIAIR Plus board config / device tree for U-Boot
-- [ ] Build TPL/SPL + U-Boot proper for RK3568
-- [ ] Build idbloader.img (TPL + SPL merged)
-- [ ] Test: boot U-Boot on ASIAIR Plus (write to uboot partition)
-- [ ] Verify: U-Boot serial console output (find UART pins if needed)
+- [x] Decide: mainline U-Boot (2025.x, generic-rk3568 defconfig)
+- [x] Set up cross-compilation toolchain (aarch64-linux-gnu-gcc 14.2)
+- [x] Build TPL/SPL + U-Boot proper for RK3568 (BL31 v1.45, DDR 1560MHz v1.23)
+- [x] Build idbloader.img (TPL + SPL merged, 198K) + u-boot.itb (U-Boot + ATF, 1003K)
+- [x] Flash to ASIAIR Plus (idbloader at sector 0x40, u-boot.itb at sector 0x4000)
+- [x] Test: mainline U-Boot boots ASIAIR Plus, stock kernel loads, SSH works
+- [ ] Verify: U-Boot serial console (no UART pads found — ZWO removed debug headers)
 - [ ] Configure U-Boot to boot from eMMC with standard distro boot (extlinux.conf)
+- [ ] Create ASIAIR Plus board-specific U-Boot device tree (optional, generic works)
 
 ## Phase 5: Kernel
 
@@ -130,6 +131,30 @@ before any of this work is possible.
 - [ ] Create one-command restore script
 - [ ] Test: full restore to stock firmware from backup
 - [ ] Test: full restore from bricked state via rk-flashtool
+
+---
+
+## Build Dependencies (Debian/Ubuntu)
+
+### rk-flashtool (Phase 3)
+
+```bash
+sudo apt install build-essential autoconf automake libusb-1.0-0-dev pkg-config
+```
+
+### U-Boot Cross-Compilation (Phase 4)
+
+```bash
+sudo apt install gcc-aarch64-linux-gnu bison flex swig python3-dev \
+  python3-setuptools python3-pyelftools device-tree-compiler bc libssl-dev
+```
+
+### External Repos (cloned alongside rkdeveloptool)
+
+| Repo | Purpose | URL |
+|------|---------|-----|
+| u-boot | Mainline U-Boot source | https://github.com/u-boot/u-boot.git |
+| rkbin | Rockchip DDR blob + BL31 firmware | https://github.com/rockchip-linux/rkbin.git |
 
 ---
 
