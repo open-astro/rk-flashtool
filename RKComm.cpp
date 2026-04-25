@@ -46,6 +46,13 @@ bool CRKUsbComm::InitializeUsb(STRUCT_RKDEVICE_DESC devDesc)
 	}
 	struct libusb_config_descriptor *pConfigDesc=NULL;
 	iRet = libusb_get_active_config_descriptor((libusb_device *)devDesc.pUsbHandle, &pConfigDesc);
+	if (iRet == LIBUSB_ERROR_NOT_FOUND) {
+		libusb_set_configuration((libusb_device_handle *)m_pUsbHandle, 1);
+		iRet = libusb_get_active_config_descriptor((libusb_device *)devDesc.pUsbHandle, &pConfigDesc);
+	}
+	if (iRet == LIBUSB_ERROR_NOT_FOUND) {
+		iRet = libusb_get_config_descriptor((libusb_device *)devDesc.pUsbHandle, 0, &pConfigDesc);
+	}
 	if (iRet!=0) {
 		if (m_log) {
 			m_log->Record("Error:InitializeUsb-->get device config descriptor failed, err=%d", iRet);
@@ -82,6 +89,11 @@ bool CRKUsbComm::InitializeUsb(STRUCT_RKDEVICE_DESC devDesc)
 				if ((m_pipeBulkIn != 0) && (m_pipeBulkOut != 0)) {//found it
 					m_interfaceNum = i;
 					libusb_free_config_descriptor(pConfigDesc);
+					libusb_detach_kernel_driver((libusb_device_handle *)m_pUsbHandle, m_interfaceNum);
+					int config = -1;
+					libusb_get_configuration((libusb_device_handle *)m_pUsbHandle, &config);
+					if (config != 1)
+						libusb_set_configuration((libusb_device_handle *)m_pUsbHandle, 1);
 					iRet = libusb_claim_interface((libusb_device_handle *)m_pUsbHandle, m_interfaceNum);
 					if (iRet != 0) {
 						if (m_log) {

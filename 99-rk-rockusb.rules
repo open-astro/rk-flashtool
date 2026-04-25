@@ -18,5 +18,7 @@ ATTRS{idVendor}=="2207", ATTRS{idProduct}=="330c", MODE="0666", GROUP="users"
 ATTRS{idVendor}=="2207", ATTRS{idProduct}=="350a", MODE="0666", GROUP="users"
 # RK3568
 ATTRS{idVendor}=="2207", ATTRS{idProduct}=="350b", MODE="0666", GROUP="users"
+# RV1126 (ASIAIR Mini)
+ATTRS{idVendor}=="2207", ATTRS{idProduct}=="110b", MODE="0666", GROUP="users"
 
 LABEL="end_rules"

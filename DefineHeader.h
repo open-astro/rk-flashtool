@@ -57,7 +57,8 @@ typedef enum{
 	RK31_DEVICE = 0x70,
 	RK32_DEVICE = 0x80,
 	RK33_DEVICE = 0x90,
-	RK35_DEVICE = 0xA0
+	RK35_DEVICE = 0xA0,
+	RV11_DEVICE = 0xB0
 } ENUM_RKDEVICE_TYPE;
 typedef enum{
 	RK_OS = 0,

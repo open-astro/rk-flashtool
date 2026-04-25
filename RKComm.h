@@ -84,7 +84,7 @@ typedef struct {
 } CSW, *PCSW;
 
 #pragma pack()
-#define CMD_TIMEOUT 0
+#define CMD_TIMEOUT 60000
 #define CBW_SIGN			0x43425355	/* "USBC" */
 #define CSW_SIGN			0x53425355	/* "USBS" */
 

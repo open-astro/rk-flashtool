@@ -46,10 +46,10 @@ before any of this work is possible.
 - [x] Add RK3568 device type to DefineHeader.h enum
 - [x] Add RK3568 udev rule to 99-rk-rockusb.rules
 - [x] Build rk-flashtool with RK3568 support
-- [ ] Obtain RK3568 MiniLoaderAll.bin (from Rockchip repo or extract from stock)
+- [x] Obtain RK3568 SPL loader (rk356x_spl_loader_v1.23.114.bin from rkbin repo)
 - [x] Test: verify rk-flashtool detects RK3568 (reports PID 0x350a in Loader mode, chip info "3568")
 - [x] Document rk-flashtool usage, restore procedure, and recovery guide (flashtool-recovery.md)
-- [ ] Document how to enter Maskrom mode on ASIAIR Plus (needs PCB inspection for eMMC CLK pin)
+- [x] Document Maskrom recovery (tested 2026-04-24 — device enters Maskrom automatically when bootloader is corrupted)
 
 ## Phase 4: U-Boot
 
@@ -65,46 +65,37 @@ before any of this work is possible.
 
 ## Phase 5: Kernel
 
-- [ ] Decide: Rockchip BSP 4.19 (all drivers work) vs mainline 6.x (modern, needs porting)
-- [ ] Fork/clone chosen kernel source
-- [ ] Create ASIAIR Plus device tree (.dts) for chosen kernel
-  - [ ] RK3568 base SoC
-  - [ ] eMMC (sdhci)
-  - [ ] USB host controllers (DWC3/xHCI)
-  - [ ] Ethernet (GMAC)
-  - [ ] WiFi SDIO (AP6256 / bcmdhd or brcmfmac)
+- [x] Decide: mainline Linux 7.0 (arm64 defconfig, brcmfmac WiFi, libgpiod for DC ports)
+- [x] Clone mainline kernel source
+- [x] Create ASIAIR Plus device tree (rk3568-asiair-plus.dts)
+  - [x] RK3568 base SoC
+  - [x] eMMC (sdhci, Samsung 256GB)
+  - [x] USB host controllers (xHCI + EHCI/OHCI + USB2/3 PHY)
+  - [x] USB power enable regulators (4 ports, GPIO-controlled)
+  - [x] Ethernet (GMAC0, RGMII, PHY reset GPIO1_B1)
+  - [x] WiFi SDIO (AP6256 / brcmfmac, pwrseq via GPIO2_B1)
   - [ ] Bluetooth UART
-  - [ ] GPIO bank definitions
-  - [ ] PWM GPIO / airplus-gpios node
-  - [ ] LED definitions (gpio-leds)
-  - [ ] DC power port GPIO mapping
-  - [ ] USB power enable regulators
-  - [ ] HDMI output
-  - [ ] Thermal management (TSADC)
-- [ ] Configure kernel (.config)
-  - [ ] Start from stock config or defconfig
-  - [ ] Enable required drivers (WiFi, BT, USB, GPIO, PWM, LEDs)
-  - [ ] Enable Debian-required features (cgroups, namespaces, systemd support)
-- [ ] Build kernel Image + dtb + modules
-- [ ] Decide pwm_gpio driver strategy:
-  - [ ] Option A: Port stock pwm_gpio.ko to new kernel (easiest)
-  - [ ] Option B: Rewrite as proper mainline driver
-  - [ ] Option C: Use libgpiod from userspace (no kernel module needed)
-- [ ] WiFi driver strategy:
-  - [ ] Option A: Use Rockchip bcmdhd_wifi6 fork (proven, but out-of-tree)
-  - [ ] Option B: Use mainline brcmfmac (cleaner, but may need firmware tweaks)
+  - [x] LED definitions (gpio-leds: power, activity, network, status)
+  - [x] Button input (gpio-keys: GPIO0_A5)
+  - [x] Thermal management (TSADC)
+  - [x] Power domains (pmu_io_domains)
+  - N/A: HDMI (no connector on board)
+- [x] Configure kernel (arm64 defconfig — all drivers already enabled)
+- [x] Build kernel Image (42MB) + dtb (58KB) + modules
+- [x] WiFi: mainline brcmfmac (in defconfig as module)
+- [ ] DC power ports: libgpiod from userspace (GPIO4_C2/C3/C5/C6)
 - [ ] Test: boot custom kernel on ASIAIR Plus
 
 ## Phase 6: Debian Root Filesystem
 
-- [ ] Create arm64 Debian rootfs via debootstrap (bookworm or trixie)
-- [ ] Install essential packages (systemd, network-manager, openssh-server, etc.)
+- [x] Create arm64 Debian rootfs via debootstrap (trixie)
+- [x] Install essential packages (systemd, network-manager, openssh-server, etc.)
 - [ ] Configure networking (WiFi AP mode + station mode, ethernet)
-- [ ] Configure hostname, users, SSH keys
-- [ ] Install WiFi/BT firmware blobs to /lib/firmware/
-- [ ] Install kernel modules
-- [ ] Create fstab for eMMC partitions
-- [ ] Set up boot configuration (extlinux.conf or boot.scr)
+- [x] Configure hostname, users, SSH keys (scripts/debian/asiair-rootfs-setup.sh)
+- [x] Install WiFi/BT firmware blobs to /lib/firmware/ (scripts/debian/asiair-rootfs-setup.sh)
+- [x] Install kernel modules (scripts/debian/asiair-rootfs-setup.sh)
+- [x] Create fstab for eMMC partitions (scripts/debian/asiair-create-image.sh)
+- [x] Set up boot configuration (extlinux.conf via scripts/debian/asiair-create-image.sh)
 - [ ] Test: boot Debian on ASIAIR Plus
 - [ ] Verify: SSH access works
 - [ ] Verify: WiFi works (both AP and station mode)
@@ -126,11 +117,44 @@ before any of this work is possible.
 
 ## Phase 8: Restore & Recovery Documentation
 
-- [ ] Document full restore procedure (dd-based, partition by partition)
-- [ ] Document rk-flashtool Maskrom recovery procedure
-- [ ] Create one-command restore script
-- [ ] Test: full restore to stock firmware from backup
-- [ ] Test: full restore from bricked state via rk-flashtool
+- [x] Document full restore procedure (flashtool-recovery.md — partition by partition via rk-flashtool)
+- [x] Document rk-flashtool Maskrom recovery procedure (flashtool-recovery.md — tested 2026-04-24)
+- [x] Create flash script (scripts/debian/asiair-flash.sh)
+- [x] Test: full restore to stock firmware from backup (2026-04-24)
+- [x] Test: full restore from bricked state via rk-flashtool (2026-04-24, Maskrom recovery)
+
+---
+
+## Partition Layouts
+
+### Stock ASIAIR Partition Table (GPT)
+
+| # | Name     | Start Sector | Size    | Format     | Purpose                          |
+|---|----------|-------------|---------|------------|----------------------------------|
+| 1 | uboot    | 0x4000      | 4 MB    | raw (FDT)  | Rockchip U-Boot                  |
+| 2 | misc     | 0x6000      | 4 MB    | raw        | A/B slot metadata                |
+| 3 | boot     | 0x8000      | 64 MB   | raw        | Android boot image (kernel)      |
+| 4 | recovery | 0x28000     | 32 MB   | raw (FDT)  | Recovery image                   |
+| 5 | asiair   | 0x38000     | 222 GB  | VFAT       | Image storage (astrophotography) |
+| 6 | pi       | 0x1BC38000  | 512 MB  | ext4       | /home/pi                         |
+| 7 | rootfs   | 0x1BD38000  | 7 GB    | ext4       | Stock root filesystem (read-only)|
+| 8 | swap     | 0x1CB38000  | 3.4 GB  | linux-swap | Swap                             |
+
+Pre-partition area: sectors 0–16383 (8 MB) contain GPT header + TPL/SPL bootloader.
+
+### Debian Partition Table (GPT) — new layout for 32GB and 256GB units
+
+| # | Name   | Start Sector | Size           | Format | Purpose                        |
+|---|--------|-------------|----------------|--------|--------------------------------|
+| 1 | uboot  | 0x4000      | 4 MB           | raw    | Mainline U-Boot (u-boot.itb)   |
+| 2 | boot   | 0x6000      | 256 MB         | ext4   | Kernel + DTB + extlinux.conf   |
+| 3 | rootfs | 0x86000     | (all remaining - 1 GB) | ext4 | Debian OS (auto-resized on first boot) |
+| 4 | swap   | (end - 1GB) | 1 GB           | swap   | Swap                           |
+
+Pre-partition area: sectors 0–16383 (8 MB) — idbloader.img at sector 0x40.
+
+This layout works on any eMMC size. The rootfs image ships small (~1.2 GB)
+and expands to fill available space on first boot via resize2fs.
 
 ---
 
@@ -149,12 +173,33 @@ sudo apt install gcc-aarch64-linux-gnu bison flex swig python3-dev \
   python3-setuptools python3-pyelftools device-tree-compiler bc libssl-dev
 ```
 
+### Kernel Build + Debian Rootfs (Phase 5 & 6)
+
+```bash
+sudo apt install debootstrap qemu-user-static
+```
+
+### Flashing & Debugging
+
+```bash
+sudo apt install strace sfdisk
+```
+
+### Create Debian Trixie arm64 Rootfs
+
+```bash
+sudo debootstrap --arch=arm64 \
+  --include=systemd,systemd-sysv,openssh-server,network-manager,wpasupplicant,hostapd,sudo,vim-tiny,less,locales,dbus,iproute2,iputils-ping,wget,curl,ca-certificates,usbutils,pciutils,kmod \
+  trixie /home/dev/Documents/GitHub/asiair-rootfs http://deb.debian.org/debian
+```
+
 ### External Repos (cloned alongside rkdeveloptool)
 
 | Repo | Purpose | URL |
 |------|---------|-----|
 | u-boot | Mainline U-Boot source | https://github.com/u-boot/u-boot.git |
 | rkbin | Rockchip DDR blob + BL31 firmware | https://github.com/rockchip-linux/rkbin.git |
+| linux | Mainline Linux kernel source | https://github.com/torvalds/linux.git |
 
 ---
 

@@ -18,7 +18,7 @@
 extern const char *szManufName[];
 CRKLog *g_pLogObject=NULL;
 CONFIG_ITEM_VECTOR g_ConfigItemVec;
-#define DEFAULT_RW_LBA 128
+#define DEFAULT_RW_LBA 2048
 #define CURSOR_MOVEUP_LINE(n) printf("%c[%dA", 0x1B, n)
 #define CURSOR_DEL_LINE printf("%c[2K", 0x1B)
 #define CURSOR_MOVE_HOME printf("%c[H", 0x1B)
@@ -2564,7 +2564,7 @@ bool read_lba(STRUCT_RKDEVICE_DESC &dev, UINT uiBegin, UINT uiLen, char *szFile)
 	int iRet;
 	UINT iTotalRead = 0,iRead = 0;
 	int nSectorSize = 512;
-	BYTE pBuf[nSectorSize * DEFAULT_RW_LBA];
+	BYTE *pBuf = new BYTE[nSectorSize * DEFAULT_RW_LBA];
 	pComm =  new CRKUsbComm(dev, g_pLogObject, bRet);
 	if (bRet) {
 		if(szFile) {
@@ -2621,6 +2621,7 @@ Exit_ReadLBA:
 	}
 	if (file)
 		fclose(file);
+	delete[] pBuf;
 	return bSuccess;
 }
 bool erase_ubi_block(STRUCT_RKDEVICE_DESC &dev, u32 uiOffset, u32 uiPartSize)
@@ -2903,6 +2904,7 @@ bool write_sparse_lba(STRUCT_RKDEVICE_DESC &dev, UINT uiBegin, UINT uiSize, char
 					CURSOR_DEL_LINE;
 					printf("Write LBA from file (%lld%%)\r\n", (iTotalWrite / 1024) * 100 / (iFileSize / 1024));
 				}
+				fflush(stdout);
 				break;
 			case CHUNK_TYPE_CRC32:
 				EatSparseData(file,(PBYTE)&dwCrc,4);
@@ -2936,7 +2938,7 @@ bool write_lba(STRUCT_RKDEVICE_DESC &dev, UINT uiBegin, char *szFile)
 	UINT iWrite = 0, iRead = 0;
 	UINT uiLen;
 	int nSectorSize = 512;
-	BYTE pBuf[nSectorSize * DEFAULT_RW_LBA];
+	BYTE *pBuf = new BYTE[nSectorSize * DEFAULT_RW_LBA];
 	
 
 	pComm =  new CRKUsbComm(dev, g_pLogObject, bRet);
@@ -2969,6 +2971,7 @@ bool write_lba(STRUCT_RKDEVICE_DESC &dev, UINT uiBegin, char *szFile)
 					CURSOR_DEL_LINE;
 					printf("Write LBA from file (%lld%%)\r\n", (iTotalWrite / 1024) * 100 / (iFileSize / 1024));
 				}
+				fflush(stdout);
 			} else {
 				if (g_pLogObject)
 					g_pLogObject->Record("Error: RKU_WriteLBA failed, err=%d", iRet);
@@ -2988,6 +2991,7 @@ Exit_WriteLBA:
 	}
 	if (file)
 		fclose(file);
+	delete[] pBuf;
 	return bSuccess;
 }
 
