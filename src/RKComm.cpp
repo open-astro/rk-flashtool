@@ -867,6 +867,8 @@ int CRKUsbComm::RKU_DeviceRequest(DWORD dwRequest, BYTE *lpBuffer, DWORD dwDataS
 		nSendBytes = ( (dwDataSize - dwTotalSended) > 4096) ? 4096 : (dwDataSize - dwTotalSended);
 		iRet = libusb_control_transfer((libusb_device_handle *)m_pUsbHandle, 0x40, 0xC, 0, dwRequest, pData + dwTotalSended, nSendBytes, CMD_TIMEOUT);
 		if (iRet != (int)nSendBytes) {
+			fprintf(stderr, "DEBUG: control_transfer vendor=0x%x sent=%u expected=%u ret=%d (%s)\n",
+				dwRequest, dwTotalSended, nSendBytes, iRet, libusb_strerror((enum libusb_error)iRet));
 			if (m_log) {
 				m_log->Record("Error:RKU_DeviceRequest-->DeviceRequest vendor=0x%x failed, err=%d",dwRequest, iRet);
 			}

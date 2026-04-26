@@ -1,0 +1,88 @@
+#!/bin/bash
+set -e
+
+# Flash a rootfs image to ASIAIR Plus partition 7.
+# Accepts both raw .img and compressed .img.gz files.
+#
+# Usage: sudo scripts/flash-rootfs [rootfs-image]
+
+REPODIR="$(cd "$(dirname "$0")/.." && pwd)"
+TOOL="$REPODIR/rk-flashtool"
+RELEASE_URL="https://github.com/open-astro/rk-flashtool/releases/download/v1.0/astrolinux-trixie-rk3568.img.gz"
+IMAGES_DIR="$REPODIR/images"
+
+# Search order for rootfs image: arg > images/ in repo > ../asiair-image/
+find_rootfs() {
+    local paths=("$IMAGES_DIR/astrolinux-trixie-rk3568" "$(dirname "$REPODIR")/asiair-image/rootfs-stock")
+    for p in "${paths[@]}"; do
+        for ext in .img .img.gz; do
+            [ -f "${p}${ext}" ] && echo "${p}${ext}" && return
+        done
+    done
+}
+
+download_rootfs() {
+    mkdir -p "$IMAGES_DIR"
+    local dest="$IMAGES_DIR/astrolinux-trixie-rk3568.img.gz"
+    echo "OpenAstro Linux image not found locally. Downloading..."
+    echo "  $RELEASE_URL"
+    echo ""
+    if command -v wget >/dev/null 2>&1; then
+        wget -O "$dest" "$RELEASE_URL"
+    elif command -v curl >/dev/null 2>&1; then
+        curl -L -o "$dest" "$RELEASE_URL"
+    else
+        echo "ERROR: wget or curl required. Download manually:"
+        echo "  mkdir -p images"
+        echo "  wget -O images/astrolinux-trixie-rk3568.img.gz $RELEASE_URL"
+        exit 1
+    fi
+    echo ""
+    echo "Downloaded: $dest ($(du -h "$dest" | cut -f1))"
+    echo "$dest"
+}
+
+ROOTFS_ARG="${1:-$(find_rootfs)}"
+if [ -z "$ROOTFS_ARG" ]; then
+    ROOTFS_ARG="$(download_rootfs)"
+fi
+
+if [ ! -x "$TOOL" ]; then
+    echo "rk-flashtool not found. Build it first."
+    exit 1
+fi
+
+# Find rootfs image — try .img, then .img.gz
+ROOTFS_IMG="$ROOTFS_ARG"
+if [ ! -f "$ROOTFS_IMG" ] && [ -f "${ROOTFS_IMG}.gz" ]; then
+    ROOTFS_IMG="${ROOTFS_IMG}.gz"
+fi
+
+if [ ! -f "$ROOTFS_IMG" ]; then
+    echo "Rootfs image not found: $ROOTFS_ARG"
+    echo "Usage: sudo scripts/flash-rootfs [rootfs-image]"
+    exit 1
+fi
+
+# Decompress .gz images to a temp file
+if [[ "$ROOTFS_IMG" == *.gz ]]; then
+    echo "Decompressing $(basename "$ROOTFS_IMG")..."
+    TMPIMG="$(mktemp /tmp/astrolinux-rootfs-XXXXXX.img)"
+    trap 'rm -f "$TMPIMG"' EXIT
+    gunzip -c "$ROOTFS_IMG" > "$TMPIMG"
+    ROOTFS_IMG="$TMPIMG"
+    echo "Done ($(du -h "$ROOTFS_IMG" | cut -f1))."
+    echo ""
+fi
+
+$TOOL ld 2>/dev/null | grep -q "Loader\|Maskrom" || {
+    echo "No ASIAIR found in Loader or Maskrom mode."
+    exit 1
+}
+
+SIZE=$(du -h "$ROOTFS_IMG" | cut -f1)
+echo "Flashing rootfs to p7 (sector 0x1BD38000)..."
+echo "  Image: $ROOTFS_IMG ($SIZE)"
+echo "  This may take several minutes over USB..."
+$TOOL wl 0x1BD38000 "$ROOTFS_IMG"
+echo "Done."

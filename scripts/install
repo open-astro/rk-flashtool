@@ -1,0 +1,364 @@
+#!/bin/bash
+set -e
+
+# OpenAstro Linux Installer
+# One-script setup: jailbreak → backup → download image → flash rootfs.
+#
+# Only replaces partition 7 (rootfs). The stock boot chain is never touched.
+#
+# Usage:
+#   sudo scripts/install              # full: jailbreak + backup + download + flash
+#   sudo scripts/install --flash-only # skip jailbreak/backup (already have a backup)
+
+REPODIR="$(cd "$(dirname "$0")/.." && pwd)"
+TOOL="$REPODIR/rk-flashtool"
+BACKUP_DIR="$REPODIR/asiair-backup"
+JAILBREAK_DIR="$REPODIR/jailbreak"
+IMAGES_DIR="$REPODIR/images"
+RELEASE_URL="https://github.com/open-astro/rk-flashtool/releases/download/v1.0/astrolinux-trixie-rk3568.img.gz"
+CLEANUP_TMP=""
+FLASH_ONLY=false
+if [ "${1:-}" = "--flash-only" ]; then
+    FLASH_ONLY=true
+    shift
+fi
+
+trap 'rm -f "$CLEANUP_TMP"' EXIT
+
+# --- Helpers ---
+
+prompt_continue() {
+    echo ""
+    read -rp "$1 [Y/n] " answer
+    case "$answer" in
+        [nN]*) echo "Aborted."; exit 0 ;;
+    esac
+}
+
+prompt_wait() {
+    echo ""
+    read -rp "$1 [Press Enter when ready] " _
+}
+
+# --- Preflight ---
+
+if [ ! -x "$TOOL" ]; then
+    echo "rk-flashtool not found. Build it first:"
+    echo "  ./autogen.sh && ./configure && make"
+    exit 1
+fi
+
+if $FLASH_ONLY; then
+    echo ""
+    echo "========================================"
+    echo "  OpenAstro Linux Installer (flash only)"
+    echo "========================================"
+    echo ""
+    echo "Skipping jailbreak and backup."
+    echo "This will download the image and flash partition 7 only."
+    echo ""
+    prompt_continue "Ready to begin?"
+else
+    echo ""
+    echo "========================================"
+    echo "  OpenAstro Linux Installer for ASIAIR"
+    echo "========================================"
+    echo ""
+    echo "This script will:"
+    echo "  1. Jailbreak your ASIAIR to enable SSH"
+    echo "  2. Backup all partitions over SSH"
+    echo "  3. Download the OpenAstro Linux image"
+    echo "  4. Flash the rootfs (partition 7 only)"
+    echo ""
+    echo "The stock boot chain is never modified."
+    echo "Your ASIAIR must be powered on and connected"
+    echo "to the same network as this computer."
+    echo ""
+
+    # Check prerequisites for jailbreak/backup
+    MISSING=""
+    if ! command -v python3 >/dev/null 2>&1; then
+        MISSING="$MISSING  python3 (run: sudo apt install python3)\n"
+    fi
+    if ! command -v sshpass >/dev/null 2>&1; then
+        MISSING="$MISSING  sshpass (run: sudo apt install sshpass)\n"
+    fi
+
+    if [ -n "$MISSING" ]; then
+        echo "Missing prerequisites:"
+        echo -e "$MISSING"
+        exit 1
+    fi
+
+    prompt_continue "Ready to begin?"
+
+    # ============================================================
+    # Step 1: Jailbreak
+    # ============================================================
+
+    echo ""
+    echo "========================================"
+    echo "  Step 1/4 — Jailbreak"
+    echo "========================================"
+    echo ""
+    echo "Enabling SSH on your ASIAIR via the OTA update mechanism."
+    echo ""
+
+    python3 "$JAILBREAK_DIR/run_jailbreak.py" "$@"
+
+    echo ""
+    echo "Waiting for SSH to come up..."
+    sleep 5
+
+    ASIAIR_IP=""
+    PASS="${ASIAIR_PASS:-raspberry}"
+    SSH_CMD="sshpass -p $PASS ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5"
+
+    for host in asiair 192.168.88.1; do
+        if $SSH_CMD "pi@$host" 'echo ok' >/dev/null 2>&1; then
+            ASIAIR_IP="$host"
+            break
+        fi
+    done
+
+    if [ -z "$ASIAIR_IP" ]; then
+        echo ""
+        echo "Could not auto-detect ASIAIR SSH address."
+        read -rp "Enter the ASIAIR IP address: " ASIAIR_IP
+        if ! $SSH_CMD "pi@$ASIAIR_IP" 'echo ok' >/dev/null 2>&1; then
+            echo "Cannot connect to pi@$ASIAIR_IP via SSH."
+            exit 1
+        fi
+    fi
+
+    echo "SSH connected to pi@$ASIAIR_IP"
+
+    # ============================================================
+    # Step 2: Backup
+    # ============================================================
+
+    echo ""
+    echo "========================================"
+    echo "  Step 2/4 — Backup"
+    echo "========================================"
+    echo ""
+    echo "Streaming all ASIAIR partitions over SSH."
+    echo "This will take several minutes (~7.7 GB)."
+    echo ""
+    echo "This backup is your ONLY way to restore stock firmware."
+    echo "ZWO does not distribute firmware images."
+    echo ""
+
+    REMOTE="pi@$ASIAIR_IP"
+    DATE=$(date +%Y%m%d)
+    DEVICE="/dev/mmcblk0"
+
+    mkdir -p "$BACKUP_DIR"
+
+    ok_count=0
+    fail_count=0
+
+    pull_backup() {
+        local desc="$1"
+        local remote_cmd="$2"
+        local local_file="$BACKUP_DIR/${DATE}_${3}"
+
+        echo "  $desc..."
+        if $SSH_CMD "$REMOTE" "echo $PASS | sudo -S $remote_cmd" > "$local_file" 2>/dev/null; then
+            local size
+            size=$(du -h "$local_file" | cut -f1)
+            echo "    $size — OK"
+            ok_count=$((ok_count + 1))
+        else
+            echo "    FAILED"
+            fail_count=$((fail_count + 1))
+        fi
+    }
+
+    pull_backup "Bootloader (sectors 0-16383)" \
+        "dd if=$DEVICE bs=512 count=16384 2>/dev/null" \
+        "bootloader_pre_partition.bin"
+
+    pull_backup "p1 — U-Boot (4 MB)" \
+        "dd if=${DEVICE}p1 bs=4M 2>/dev/null" \
+        "p1_uboot.bin"
+
+    pull_backup "p2 — misc (4 MB)" \
+        "dd if=${DEVICE}p2 bs=4M 2>/dev/null" \
+        "p2_misc.bin"
+
+    pull_backup "p3 — Boot image (64 MB)" \
+        "dd if=${DEVICE}p3 bs=4M 2>/dev/null" \
+        "p3_boot.bin"
+
+    pull_backup "p4 — Recovery (32 MB)" \
+        "dd if=${DEVICE}p4 bs=4M 2>/dev/null" \
+        "p4_recovery.bin"
+
+    pull_backup "p6 — /home/pi (512 MB)" \
+        "dd if=${DEVICE}p6 bs=4M 2>/dev/null" \
+        "p6_pi.bin"
+
+    echo ""
+    echo "  p7 — Rootfs (7 GB) — this will take a few minutes..."
+    pull_backup "p7 — Rootfs" \
+        "dd if=${DEVICE}p7 bs=4M 2>/dev/null" \
+        "p7_rootfs.bin"
+
+    echo ""
+    if [ "$fail_count" -gt 0 ]; then
+        echo "WARNING: $fail_count backup(s) failed!"
+        echo "A complete backup is required to restore stock firmware later."
+        prompt_continue "Continue anyway?"
+    else
+        TOTAL=$(du -sh "$BACKUP_DIR" | cut -f1)
+        echo "Backup complete ($TOTAL). Saved to: $BACKUP_DIR"
+    fi
+fi
+
+# ============================================================
+# Download OpenAstro Linux image
+# ============================================================
+
+if $FLASH_ONLY; then STEP="Step 1/2"; else STEP="Step 3/4"; fi
+
+echo ""
+echo "========================================"
+echo "  $STEP — Download OpenAstro Linux"
+echo "========================================"
+echo ""
+
+find_rootfs() {
+    local paths=("$IMAGES_DIR/astrolinux-trixie-rk3568" "$(dirname "$REPODIR")/asiair-image/rootfs-stock")
+    for p in "${paths[@]}"; do
+        for ext in .img .img.gz; do
+            [ -f "${p}${ext}" ] && echo "${p}${ext}" && return
+        done
+    done
+}
+
+ROOTFS_IMG="$(find_rootfs)"
+
+if [ -z "$ROOTFS_IMG" ]; then
+    echo "Downloading OpenAstro Linux image..."
+    echo "  $RELEASE_URL"
+    echo ""
+    mkdir -p "$IMAGES_DIR"
+    local_dest="$IMAGES_DIR/astrolinux-trixie-rk3568.img.gz"
+    if command -v wget >/dev/null 2>&1; then
+        wget -O "$local_dest" "$RELEASE_URL"
+    elif command -v curl >/dev/null 2>&1; then
+        curl -L -o "$local_dest" "$RELEASE_URL"
+    else
+        echo "ERROR: wget or curl required."
+        exit 1
+    fi
+    ROOTFS_IMG="$local_dest"
+    echo ""
+    echo "Downloaded: $(du -h "$ROOTFS_IMG" | cut -f1)"
+else
+    echo "Found image: $ROOTFS_IMG ($(du -h "$ROOTFS_IMG" | cut -f1))"
+fi
+
+# Decompress if needed
+if [[ "$ROOTFS_IMG" == *.gz ]]; then
+    echo "Decompressing $(basename "$ROOTFS_IMG")..."
+    TMPIMG="$(mktemp /tmp/astrolinux-rootfs-XXXXXX.img)"
+    CLEANUP_TMP="$TMPIMG"
+    gunzip -c "$ROOTFS_IMG" > "$TMPIMG"
+    ROOTFS_IMG="$TMPIMG"
+    echo "Done ($(du -h "$ROOTFS_IMG" | cut -f1))."
+fi
+
+# ============================================================
+# Step 4: Flash rootfs only
+# ============================================================
+
+if $FLASH_ONLY; then STEP="Step 2/2"; else STEP="Step 4/4"; fi
+
+echo ""
+echo "========================================"
+echo "  $STEP — Flash Rootfs"
+echo "========================================"
+echo ""
+echo "Now you need to put the ASIAIR into Loader mode:"
+echo ""
+echo "  1. Power off the ASIAIR completely"
+echo "  2. Connect USB-C cable between ASIAIR and this PC"
+echo "  3. Hold the reset button while powering on"
+
+prompt_wait "Press Enter when the ASIAIR is in Loader mode"
+
+while true; do
+    echo ""
+    echo "Detecting device..."
+
+    RETRIES=0
+    while ! $TOOL ld 2>/dev/null | grep -q "Loader\|Maskrom"; do
+        RETRIES=$((RETRIES + 1))
+        if [ "$RETRIES" -ge 30 ]; then
+            echo ""
+            echo "No device found after 30 seconds."
+            echo "Check that the USB-C cable is connected and the device is in Loader mode."
+            prompt_wait "Press Enter to try again"
+            RETRIES=0
+            continue
+        fi
+        sleep 1
+    done
+    break
+done
+
+MODE=$($TOOL ld 2>/dev/null | grep -o "Loader\|Maskrom")
+echo "Device found in $MODE mode."
+
+# If in Maskrom, load DDR/SPL first
+if [ "$MODE" = "Maskrom" ]; then
+    LOADER=""
+    if [ -f "$REPODIR/blobs/rk356x_spl_loader_v1.23.114.bin" ]; then
+        LOADER="$REPODIR/blobs/rk356x_spl_loader_v1.23.114.bin"
+    fi
+    if [ -z "$LOADER" ]; then
+        echo "Loader blob not found. Cannot proceed in Maskrom mode."
+        exit 1
+    fi
+    echo "Loading DDR/SPL..."
+    $TOOL db "$LOADER"
+    sleep 2
+fi
+
+SIZE=$(du -h "$ROOTFS_IMG" | cut -f1)
+echo ""
+echo "Flashing OpenAstro Linux rootfs to partition 7 ($SIZE)..."
+echo "This may take several minutes over USB..."
+echo ""
+
+$TOOL wl 0x1BD38000 "$ROOTFS_IMG" || {
+    echo ""
+    echo "ERROR: Rootfs write failed."
+    echo "Try power cycling the ASIAIR and running: sudo scripts/flash-rootfs"
+    exit 1
+}
+
+echo ""
+echo "Resetting device..."
+$TOOL rd || true
+
+echo ""
+echo "========================================"
+echo "  OpenAstro Linux installed successfully!"
+echo "========================================"
+echo ""
+echo "  Hostname: astro"
+echo "  User:     astro"
+echo "  Password: astro"
+echo "  SSH:      enabled"
+echo ""
+echo "  Connect:  ssh astro@astro.local"
+echo ""
+echo "  Change the default password immediately:"
+echo "    passwd"
+echo ""
+echo "  To restore stock firmware:"
+echo "    sudo scripts/restore-stock"
+echo ""

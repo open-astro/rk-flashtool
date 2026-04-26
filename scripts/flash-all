@@ -1,0 +1,190 @@
+#!/bin/bash
+set -e
+
+# Flash OpenAstro Linux to ASIAIR Plus.
+# Restores stock boot chain (bootloader + kernel) and writes the OpenAstro Linux
+# rootfs image to p7. Stock partition table is preserved.
+#
+# Usage: sudo scripts/flash-all [rootfs-image]
+
+REPODIR="$(cd "$(dirname "$0")/.." && pwd)"
+TOOL="$REPODIR/rk-flashtool"
+BACKUP="${BACKUP_DIR:-$REPODIR/asiair-backup}"
+if [ -z "$LOADER" ]; then
+    if [ -f "$REPODIR/blobs/rk356x_spl_loader_v1.23.114.bin" ]; then
+        LOADER="$REPODIR/blobs/rk356x_spl_loader_v1.23.114.bin"
+    else
+        LOADER="$(dirname "$REPODIR")/rkbin/rk356x_spl_loader_v1.23.114.bin"
+    fi
+fi
+CLEANUP_TMP=""
+RELEASE_URL="https://github.com/open-astro/rk-flashtool/releases/download/v1.0/astrolinux-trixie-rk3568.img.gz"
+IMAGES_DIR="$REPODIR/images"
+
+# Search order for rootfs image: arg > images/ in repo > ../asiair-image/
+find_rootfs() {
+    local paths=("$IMAGES_DIR/astrolinux-trixie-rk3568" "$(dirname "$REPODIR")/asiair-image/rootfs-stock")
+    for p in "${paths[@]}"; do
+        for ext in .img .img.gz; do
+            [ -f "${p}${ext}" ] && echo "${p}${ext}" && return
+        done
+    done
+}
+
+# Download image from GitHub Releases if not found locally
+download_rootfs() {
+    mkdir -p "$IMAGES_DIR"
+    local dest="$IMAGES_DIR/astrolinux-trixie-rk3568.img.gz"
+    echo "OpenAstro Linux image not found locally. Downloading..."
+    echo "  $RELEASE_URL"
+    echo ""
+    if command -v wget >/dev/null 2>&1; then
+        wget -O "$dest" "$RELEASE_URL"
+    elif command -v curl >/dev/null 2>&1; then
+        curl -L -o "$dest" "$RELEASE_URL"
+    else
+        echo "ERROR: wget or curl required to download the image."
+        echo "Install one, or download manually:"
+        echo "  mkdir -p images"
+        echo "  wget -O images/astrolinux-trixie-rk3568.img.gz $RELEASE_URL"
+        exit 1
+    fi
+    echo ""
+    echo "Downloaded: $dest ($(du -h "$dest" | cut -f1))"
+    echo "$dest"
+}
+
+ROOTFS_ARG="${1:-$(find_rootfs)}"
+if [ -z "$ROOTFS_ARG" ]; then
+    ROOTFS_ARG="$(download_rootfs)"
+fi
+
+if [ ! -x "$TOOL" ]; then
+    echo "rk-flashtool not found. Build it first:"
+    echo "  ./autogen.sh && ./configure && make"
+    exit 1
+fi
+
+$TOOL ld 2>/dev/null | grep -q "Loader\|Maskrom" || {
+    echo "No ASIAIR found in Loader or Maskrom mode."
+    echo ""
+    echo "To enter Maskrom: power off, connect USB-C, short eMMC CLK, power on."
+    echo "See hardware/asiair-plus-rk3568-256g/flashtool-recovery.md for details."
+    exit 1
+}
+
+echo "=== OpenAstro Linux Flash ==="
+echo ""
+
+# If in Maskrom, load DDR/SPL first
+if $TOOL ld 2>/dev/null | grep -q "Maskrom"; then
+    echo "Device in Maskrom — loading DDR/SPL..."
+    if [ ! -f "$LOADER" ]; then
+        echo "Loader not found: $LOADER"
+        echo "Set LOADER= or place rk356x_spl_loader_v1.23.114.bin alongside this repo."
+        exit 1
+    fi
+    $TOOL db "$LOADER"
+    sleep 2
+fi
+
+find_backup() {
+    ls -1t "$BACKUP"/*_"$1" 2>/dev/null | head -1
+}
+
+BOOTLOADER=$(find_backup "bootloader_pre_partition.bin")
+UBOOT=$(find_backup "p1_uboot.bin")
+BOOT=$(find_backup "p3_boot.bin")
+
+if [ -z "$BOOTLOADER" ] || [ -z "$UBOOT" ] || [ -z "$BOOT" ]; then
+    echo "Backup files not found in: $BACKUP"
+    echo "Run scripts/backup first to create a full ASIAIR backup."
+    exit 1
+fi
+
+# Find rootfs image — try .img, then .img.gz
+ROOTFS_IMG="$ROOTFS_ARG"
+if [ ! -f "$ROOTFS_IMG" ] && [ -f "${ROOTFS_IMG}.gz" ]; then
+    ROOTFS_IMG="${ROOTFS_IMG}.gz"
+fi
+
+if [ ! -f "$ROOTFS_IMG" ]; then
+    echo "Rootfs image not found: $ROOTFS_ARG"
+    echo "Either download the pre-built OpenAstro Linux image or build one with:"
+    echo "  sudo scripts/build/rootfs-image.sh"
+    exit 1
+fi
+
+# Decompress .gz images to a temp file
+if [[ "$ROOTFS_IMG" == *.gz ]]; then
+    echo "Decompressing $(basename "$ROOTFS_IMG")..."
+    TMPIMG="$(mktemp /tmp/astrolinux-rootfs-XXXXXX.img)"
+    CLEANUP_TMP="$TMPIMG"
+    trap 'rm -f "$CLEANUP_TMP"' EXIT
+    gunzip -c "$ROOTFS_IMG" > "$TMPIMG"
+    ROOTFS_IMG="$TMPIMG"
+    echo "Done ($(du -h "$ROOTFS_IMG" | cut -f1))."
+    echo ""
+fi
+
+find_rk_usb() {
+    for d in /sys/bus/usb/devices/*/idVendor; do
+        if [ "$(cat "$d" 2>/dev/null)" = "2207" ]; then
+            echo "$(dirname "$d")"
+            return 0
+        fi
+    done
+}
+
+reset_usb() {
+    local dev=$(find_rk_usb)
+    if [ -n "$dev" ]; then
+        local busnum=$(cat "$dev/busnum" 2>/dev/null)
+        local devnum=$(cat "$dev/devnum" 2>/dev/null)
+        if [ -n "$busnum" ] && [ -n "$devnum" ]; then
+            usbreset "$(printf "/dev/bus/usb/%03d/%03d" "$busnum" "$devnum")" >/dev/null 2>&1 || true
+        fi
+    fi
+    sleep 2
+}
+
+flash_write() {
+    local label="$1"
+    local sector="$2"
+    local file="$3"
+    local rc=0
+    echo "$label..."
+    $TOOL wl "$sector" "$file" || rc=$?
+    if [ $rc -ne 0 ]; then
+        echo "  Write failed (rc=$rc), resetting USB and retrying..."
+        reset_usb
+        $TOOL wl "$sector" "$file" || {
+            echo "  ERROR: $label failed on retry."
+            exit 1
+        }
+    fi
+    reset_usb
+}
+
+flash_write "Restoring stock bootloader (pre-partition area)" 0 "$BOOTLOADER"
+flash_write "Restoring stock U-Boot (p1)" 0x4000 "$UBOOT"
+flash_write "Restoring stock boot image (p3)" 0x8000 "$BOOT"
+
+SIZE=$(du -h "$ROOTFS_IMG" | cut -f1)
+echo "Flashing OpenAstro Linux rootfs to p7 ($SIZE)..."
+echo "This may take several minutes over USB..."
+flash_write "Writing rootfs" 0x1BD38000 "$ROOTFS_IMG"
+
+echo ""
+echo "=== Flash complete. Resetting device... ==="
+$TOOL rd
+
+echo ""
+echo "OpenAstro Linux is installed. The device will now boot Debian."
+echo ""
+echo "  Hostname: astro"
+echo "  User:     astro"
+echo "  Password: astro"
+echo "  SSH:      enabled"
+echo ""
+echo "To restore stock ASIAIR firmware: sudo scripts/restore-stock"

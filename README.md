@@ -1,132 +1,199 @@
-# rk-flashtool
+# OpenAstro Linux — Debian 13 Trixie for the ASIAIR Plus Rockchip
 
-A maintained fork of Rockchip's `rkdeveloptool` for reading/writing Rockchip devices over USB (rockusb protocol). Maintained by [open-astro](https://github.com/open-astro) with a focus on ASIAIR Plus (RK3568) support.
+<img src="https://www.openastro.net/wp-content/uploads/2026/04/OpenAstro_logo.png" alt="AlpacaBridge logo" width="420">
 
-Originally forked from [rockchip-linux/rkdeveloptool](https://github.com/rockchip-linux/rkdeveloptool) (upstream inactive since 2023).
+Replace the stock ZWO firmware on your ASIAIR Plus with **Debian 13 (Trixie)** while keeping full hardware support — USB, WiFi, DC power ports, LEDs, and GPIO. Restore to stock at any time from your backup.
 
-## Build & Install
+## Supported Hardware
 
-### Prerequisites
+| Device | SoC | Storage | Status |
+|--------|-----|---------|--------|
+| ASIAIR Plus 256GB | RK3568 | 232 GB eMMC | Fully supported |
+
+The ASIAIR Mini (RV1126) is documented in [`hardware/asiair-mini-rv1126/`](hardware/asiair-mini-rv1126/) but not yet supported for flashing.
+
+## How It Works
+
+OpenAstro Linux uses the **stock ASIAIR bootloader and kernel** — only the root filesystem (partition 7) is replaced with Debian Trixie. This means:
+
+- Stock boot chain is untouched (bootloader, kernel, device tree)
+- All hardware works out of the box (same drivers as stock)
+- Restore to stock firmware at any time with one command
+- No repartitioning — stock partition table is preserved
+
+## Install
+
+### 1. Build rk-flashtool
 
 ```bash
-sudo apt-get install libudev-dev libusb-1.0-0-dev dh-autoreconf pkg-config
+sudo apt install build-essential autoconf automake libusb-1.0-0-dev pkg-config sshpass python3
+git clone https://github.com/open-astro/rk-flashtool.git
+cd rk-flashtool
+./autogen.sh && ./configure && make
 ```
 
-### Compile
-
-```bash
-./autogen.sh
-./configure
-make
-```
-
-### Install udev rules (for non-root access)
+### 2. Install udev rules
 
 ```bash
 sudo cp 99-rk-rockusb.rules /etc/udev/rules.d/
 sudo udevadm control --reload-rules
 ```
 
-## Usage
+### 3. Run the installer
+
+Power on your ASIAIR and connect it to the same network as your PC, then:
+
+```bash
+sudo scripts/install
+```
+
+The installer handles everything automatically:
+
+1. **Jailbreaks** your ASIAIR to enable SSH (over the network, no physical access)
+2. **Backs up** all partitions over SSH (~7.7 GB) — your only way back to stock
+3. **Downloads** the OpenAstro Linux image from GitHub Releases
+4. **Pauses** and asks you to enter Loader mode (hold the reset button while powering on)
+5. **Flashes** the stock boot chain from your backup + OpenAstro Linux rootfs
+
+Total time: ~15 minutes (mostly waiting for the backup transfer).
+
+### 4. First Boot
+
+The device reboots automatically after flashing. Disconnect USB and wait about 60 seconds.
 
 ```
-rk-flashtool -h
+ssh astro@astro.local
 ```
 
-### Common Commands
+| Setting | Value |
+|---------|-------|
+| Hostname | `astro` |
+| User | `astro` |
+| Password | `astro` |
+| SSH | Enabled |
+| WiFi | Configure via `nmcli` |
+
+**Change the default password immediately:** `passwd`
+
+### Restore Stock Firmware
+
+To go back to the original ZWO firmware at any time:
+
+1. Enter Loader mode (hold reset button while powering on)
+2. Run:
+
+```bash
+sudo scripts/restore-stock
+```
+
+This restores just the rootfs (partition 7) from your backup. The boot chain was never modified, so only the rootfs needs to be restored.
+
+If the device is bricked and won't enter Loader mode, use the full restore (requires Maskrom — eMMC shorting):
+
+```bash
+sudo scripts/restore-stock --full
+```
+
+## Build Your Own
+
+If you'd prefer to build a custom rootfs instead of using the pre-built image:
+
+### 1. Create a Debian Trixie rootfs
+
+```bash
+sudo apt install debootstrap qemu-user-static
+
+sudo debootstrap --arch=arm64 \
+  --include=systemd,systemd-sysv,openssh-server,network-manager,sudo,\
+vim-tiny,less,locales,dbus,iproute2,iputils-ping,wget,curl,\
+ca-certificates,usbutils,pciutils,kmod \
+  trixie ../asiair-rootfs http://deb.debian.org/debian
+```
+
+### 2. Configure the rootfs
+
+```bash
+sudo scripts/build/rootfs-setup.sh
+```
+
+### 3. Build the image
+
+```bash
+sudo scripts/build/rootfs-image.sh
+```
+
+### 4. Flash
+
+```bash
+sudo scripts/flash-all
+```
+
+Or to just update the rootfs without touching the boot chain:
+
+```bash
+sudo scripts/flash-rootfs
+```
+
+## Scripts Reference
+
+| Script | Description |
+|--------|-------------|
+| `scripts/install` | **Full installer** — jailbreak, backup, download, flash. Use `--flash-only` to skip jailbreak/backup |
+| `scripts/jailbreak` | Enable SSH on a stock ASIAIR (network, no physical access) |
+| `scripts/backup` | Backup ASIAIR eMMC over SSH |
+| `scripts/flash-all` | Full flash: restore stock boot chain + write OpenAstro Linux rootfs |
+| `scripts/flash-rootfs` | Flash rootfs image to p7 only |
+| `scripts/restore-stock` | Restore stock rootfs, or `--full` for complete recovery |
+| `scripts/reset-device` | Reboot the device via USB |
+| `scripts/status` | Check if a device is connected and its mode |
+| `scripts/build/rootfs-setup.sh` | Configure a debootstrap rootfs for the ASIAIR |
+| `scripts/build/rootfs-image.sh` | Package rootfs directory into flashable ext4 image |
+
+## Hardware Documentation
+
+Detailed hardware reference is in [`hardware/asiair-plus-rk3568-256g/`](hardware/asiair-plus-rk3568-256g/):
+
+- [`inventory.md`](hardware/asiair-plus-rk3568-256g/inventory.md) — Full hardware inventory, GPIO map, peripheral details
+- [`plan.md`](hardware/asiair-plus-rk3568-256g/plan.md) — Project status and roadmap
+- [`flashtool-recovery.md`](hardware/asiair-plus-rk3568-256g/flashtool-recovery.md) — rk-flashtool commands, Maskrom recovery, partition layout
+
+## rk-flashtool
+
+This repo also contains **rk-flashtool**, a fork of Rockchip's `rkdeveloptool` for reading/writing Rockchip devices over USB (rockusb protocol).
+
+```
+sudo ./rk-flashtool -h
+```
 
 | Command | Description |
 |---------|-------------|
-| `db <Loader>` | Download bootloader to device (Maskrom mode) |
-| `ul <Loader>` | Upgrade loader |
-| `rl <BeginSec> <SectorLen> <File>` | Read LBA sectors to file |
-| `wl <BeginSec> <File>` | Write file to LBA sectors |
-| `wlx <PartitionName> <File>` | Write file to named partition |
+| `db <Loader>` | Download bootloader (Maskrom mode) |
+| `rl <Sec> <Len> <File>` | Read flash sectors to file |
+| `wl <Sec> <File>` | Write file to flash sectors |
 | `ppt` | Print partition table |
-| `gpt <file>` | Write GPT partition table |
-| `ef` | Erase flash |
-| `rd [subcode]` | Reset device |
-| `rid` | Read flash ID |
-| `rfi` | Read flash info |
+| `rd` | Reset device |
 | `rci` | Read chip info |
-
-### Example: Flash a kernel image
-
-```bash
-sudo ./rk-flashtool db RKXXLoader.bin      # download bootloader to device
-sudo ./rk-flashtool wl 0x8000 kernel.img   # write kernel (0x8000 = sector offset)
-sudo ./rk-flashtool rd                     # reset device
-```
-
-## ASIAIR Plus RK3568 Support
-
-This repo includes hardware documentation and tools for the ZWO ASIAIR Plus
-(RK3568, 256 GB eMMC). See [`hardware/asiair-plus-rk3568-256g/`](hardware/asiair-plus-rk3568-256g/) for:
-
-- Full hardware inventory and GPIO mapping
-- Stock device tree source and kernel config
-- Reverse-engineered `pwm_gpio` ioctl interface (DC power ports, USB power, LEDs)
-- WiFi/Bluetooth firmware blobs (Broadcom AP6256)
-- Backup and restore scripts
-
-### Prerequisites
-
-1. **Jailbreak your ASIAIR** — SSH is not enabled on stock firmware. You must
-   first apply the jailbreak from [open-astro/ASIAIRJailbreak](https://github.com/open-astro/ASIAIRJailbreak)
-   to enable SSH access (user: `pi`, password: `raspberry`).
-
-2. **Install sshpass** on your local machine:
-   ```bash
-   sudo apt-get install sshpass
-   ```
-
-### Backup the ASIAIR Plus
-
-The backup script streams all eMMC partitions from the ASIAIR to your local
-machine over SSH. No storage needed on the device itself.
-
-#### Run the backup
-
-```bash
-cd hardware/asiair-plus-rk3568-256g/
-./backup.sh pi@asiair
-```
-
-Default credentials: user `pi`, password `raspberry` (override with
-`ASIAIR_PASS=yourpass ./backup.sh pi@asiair`).
-
-Backups are saved to `./asiair-backup/` (~7.2 GB total):
-
-| File | Contents |
-|------|----------|
-| `*_gpt_primary.bin` | GPT partition table (primary) |
-| `*_gpt_backup.bin` | GPT partition table (backup) |
-| `*_bootloader_pre_partition.bin` | SPL/TPL bootloader (sectors 0–16383) |
-| `*_p1_uboot.bin` | U-Boot (4 MB) |
-| `*_p2_misc.bin` | A/B slot metadata (4 MB) |
-| `*_p3_boot.bin` | Kernel + ramdisk (64 MB) |
-| `*_p4_recovery.bin` | Recovery image (32 MB) |
-| `*_p5_asiair_header.bin` | VFAT header (first 64 MB of 222 GB data partition) |
-| `*_p6_pi.bin` | /home/pi (512 MB) |
-| `*_p7_rootfs.bin` | Root filesystem (7 GB) |
-| `*_checksums.sha256` | SHA256 checksums for verification |
-
-#### Project plan
-
-See [`hardware/asiair-plus-rk3568-256g/plan.md`](hardware/asiair-plus-rk3568-256g/plan.md)
-for the full project plan: backup, custom kernel/U-Boot, Debian install, and
-AlpacaBridge deployment.
+| `rfi` | Read flash info |
 
 ## Troubleshooting
 
-### `PKG_CHECK_MODULES` error during configure
+### Device not detected on USB
 
-```
-./configure: line 4269: syntax error near unexpected token `LIBUSB1,libusb-1.0'
-```
+- Check `lsusb | grep 2207` — you should see VID `2207`
+- Make sure udev rules are installed (`99-rk-rockusb.rules`)
+- Try a different USB cable (some USB-C cables are charge-only)
+- The ASIAIR must be in Maskrom or Loader mode, not booted normally
 
-Install pkg-config:
+### SSH connection refused after flash
 
-```bash
-sudo apt-get install pkg-config libusb-1.0
-```
+- Wait 30-60 seconds for first boot to complete
+- Try `ssh astro@astro.local` or check your router for the device's IP
+- If WiFi isn't configured yet, connect via ethernet
+
+### Need to recover from a bad flash
+
+If the device won't boot at all, enter Maskrom mode and run `sudo scripts/restore-stock`. The stock boot chain in your backup will always work.
+
+## License
+
+See [license.txt](license.txt).

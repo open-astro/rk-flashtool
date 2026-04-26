@@ -1,0 +1,10 @@
+#!/bin/bash
+set -e
+
+TOOL="$(cd "$(dirname "$0")/.." && pwd)/rk-flashtool"
+
+$TOOL ld 2>/dev/null | grep -q "Loader\|Maskrom" || { echo "No device found."; exit 1; }
+
+echo "Resetting device..."
+$TOOL rd
+echo "Done."

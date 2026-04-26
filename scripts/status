@@ -1,0 +1,4 @@
+#!/bin/bash
+
+TOOL="$(cd "$(dirname "$0")/.." && pwd)/rk-flashtool"
+$TOOL ld 2>&1

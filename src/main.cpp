@@ -2560,7 +2560,7 @@ bool read_lba(STRUCT_RKDEVICE_DESC &dev, UINT uiBegin, UINT uiLen, char *szFile)
 		return false;
 	CRKUsbComm *pComm = NULL;
 	FILE *file = NULL;
-	bool bRet, bFirst = true, bSuccess = false;
+	bool bRet, bSuccess = false;
 	int iRet;
 	UINT iTotalRead = 0,iRead = 0;
 	int nSectorSize = 512;
@@ -2585,20 +2585,11 @@ bool read_lba(STRUCT_RKDEVICE_DESC &dev, UINT uiBegin, UINT uiLen, char *szFile)
 
 				if(szFile) {
 					fwrite(pBuf, 1, iRead * nSectorSize, file);
-					if (bFirst){
-						if (iTotalRead >= 1024)
-							printf("Read LBA to file (%d%%)\r\n", (iTotalRead / 1024) * 100 / ((uiLen + iTotalRead) / 1024));
-						else
-							printf("Read LBA to file (%d%%)\r\n", iTotalRead * 100 / (uiLen + iTotalRead));
-						bFirst = false;
-					} else {
-						CURSOR_MOVEUP_LINE(1);
-						CURSOR_DEL_LINE;
-						if (iTotalRead >= 1024)
-							printf("Read LBA to file (%d%%)\r\n", (iTotalRead / 1024) * 100 / ((uiLen + iTotalRead) / 1024));
-						else
-							printf("Read LBA to file (%d%%)\r\n", iTotalRead * 100 / (uiLen + iTotalRead));
-					}
+					int pct = ((uiLen + iTotalRead) >= 1024) ?
+						(iTotalRead / 1024) * 100 / ((uiLen + iTotalRead) / 1024) :
+						iTotalRead * 100 / (uiLen + iTotalRead);
+					printf("\rRead LBA to file (%d%%)   ", pct);
+					fflush(stdout);
 				}
 				else
 					PrintData(pBuf, nSectorSize * iRead);
@@ -2606,13 +2597,14 @@ bool read_lba(STRUCT_RKDEVICE_DESC &dev, UINT uiBegin, UINT uiLen, char *szFile)
 				if (g_pLogObject)
 					g_pLogObject->Record("Error: RKU_ReadLBA failed, err=%d", iRet);
 
-				printf("Read LBA failed!\r\n");
+				printf("\nRead LBA failed!\n");
 				goto Exit_ReadLBA;
 			}
 		}
+		printf("\n");
 		bSuccess = true;
 	} else {
-		printf("Read LBA quit, creating comm object failed!\r\n");
+		printf("Read LBA quit, creating comm object failed!\n");
 	}
 Exit_ReadLBA:
 	if (pComm) {
@@ -2765,7 +2757,7 @@ bool write_sparse_lba(STRUCT_RKDEVICE_DESC &dev, UINT uiBegin, UINT uiSize, char
 		return false;
 	CRKUsbComm *pComm = NULL;
 	FILE *file = NULL;
-	bool bRet, bSuccess = false, bFirst = true;
+	bool bRet, bSuccess = false;
 	int iRet;
 	u64 iTotalWrite = 0, iFileSize = 0,dwChunkDataSize;
 	UINT iRead = 0, uiTransferSec, curChunk, i;
@@ -2834,16 +2826,12 @@ bool write_sparse_lba(STRUCT_RKDEVICE_DESC &dev, UINT uiBegin, UINT uiSize, char
 						}
 						goto Exit_WriteSparseLBA;
 					}
-					if (bFirst) {
-						if (iTotalWrite >= 1024)
-							printf("Write LBA from file (%lld%%)\r\n", (iTotalWrite / 1024) * 100 / (iFileSize / 1024));
-						else
-							printf("Write LBA from file (%lld%%)\r\n", iTotalWrite * 100 / iFileSize);
-						bFirst = false;
-					} else {
-						CURSOR_MOVEUP_LINE(1);
-						CURSOR_DEL_LINE;
-						printf("Write LBA from file (%lld%%)\r\n", (iTotalWrite / 1024) * 100 / (iFileSize / 1024));
+					{
+						long long pct = (iFileSize >= 1024) ?
+							(iTotalWrite / 1024) * 100 / (iFileSize / 1024) :
+							iTotalWrite * 100 / iFileSize;
+						printf("\rWrite LBA from file (%lld%%)   ", pct);
+						fflush(stdout);
 					}
 				}
 				break;
@@ -2875,16 +2863,12 @@ bool write_sparse_lba(STRUCT_RKDEVICE_DESC &dev, UINT uiBegin, UINT uiSize, char
 						}
 						goto Exit_WriteSparseLBA;
 					}
-					if (bFirst) {
-						if (iTotalWrite >= 1024)
-							printf("Write LBA from file (%lld%%)\r\n", (iTotalWrite / 1024) * 100 / (iFileSize / 1024));
-						else
-							printf("Write LBA from file (%lld%%)\r\n", iTotalWrite * 100 / iFileSize);
-						bFirst = false;
-					} else {
-						CURSOR_MOVEUP_LINE(1);
-						CURSOR_DEL_LINE;
-						printf("Write LBA from file (%lld%%)\r\n", (iTotalWrite / 1024) * 100 / (iFileSize / 1024));
+					{
+						long long pct = (iFileSize >= 1024) ?
+							(iTotalWrite / 1024) * 100 / (iFileSize / 1024) :
+							iTotalWrite * 100 / iFileSize;
+						printf("\rWrite LBA from file (%lld%%)   ", pct);
+						fflush(stdout);
 					}
 				}
 				break;
@@ -2893,27 +2877,23 @@ bool write_sparse_lba(STRUCT_RKDEVICE_DESC &dev, UINT uiBegin, UINT uiSize, char
 				iTotalWrite += dwChunkDataSize;
 				uiTransferSec = ((dwChunkDataSize % SECTOR_SIZE == 0) ? (dwChunkDataSize / SECTOR_SIZE) : (dwChunkDataSize / SECTOR_SIZE + 1));
 				uiBegin += uiTransferSec;
-				if (bFirst) {
-					if (iTotalWrite >= 1024)
-						printf("Write LBA from file (%lld%%)\r\n", (iTotalWrite / 1024) * 100 / (iFileSize / 1024));
-					else
-						printf("Write LBA from file (%lld%%)\r\n", iTotalWrite * 100 / iFileSize);
-					bFirst = false;
-				} else {
-					CURSOR_MOVEUP_LINE(1);
-					CURSOR_DEL_LINE;
-					printf("Write LBA from file (%lld%%)\r\n", (iTotalWrite / 1024) * 100 / (iFileSize / 1024));
+				{
+					long long pct = (iFileSize >= 1024) ?
+						(iTotalWrite / 1024) * 100 / (iFileSize / 1024) :
+						iTotalWrite * 100 / iFileSize;
+					printf("\rWrite LBA from file (%lld%%)   ", pct);
+					fflush(stdout);
 				}
-				fflush(stdout);
 				break;
 			case CHUNK_TYPE_CRC32:
 				EatSparseData(file,(PBYTE)&dwCrc,4);
 				break;
 			}
 		}
+		printf("\n");
 		bSuccess = true;
 	} else {
-		printf("Write LBA quit, creating comm object failed!\r\n");
+		printf("Write LBA quit, creating comm object failed!\n");
 	}
 Exit_WriteSparseLBA:
 	if (pComm) {
@@ -2932,7 +2912,7 @@ bool write_lba(STRUCT_RKDEVICE_DESC &dev, UINT uiBegin, char *szFile)
 		return false;
 	CRKUsbComm *pComm = NULL;
 	FILE *file = NULL;
-	bool bRet, bFirst = true, bSuccess = false;
+	bool bRet, bSuccess = false;
 	int iRet;
 	long long iTotalWrite = 0, iFileSize = 0;
 	UINT iWrite = 0, iRead = 0;
@@ -2960,26 +2940,20 @@ bool write_lba(STRUCT_RKDEVICE_DESC &dev, UINT uiBegin, char *szFile)
 			if(ERR_SUCCESS == iRet) {
 				uiBegin += uiLen;
 				iTotalWrite += iWrite;
-				if (bFirst) {
-					if (iTotalWrite >= 1024)
-						printf("Write LBA from file (%lld%%)\r\n", (iTotalWrite / 1024) * 100 / (iFileSize / 1024));
-					else
-						printf("Write LBA from file (%lld%%)\r\n", iTotalWrite * 100 / iFileSize);
-					bFirst = false;
-				} else {
-					CURSOR_MOVEUP_LINE(1);
-					CURSOR_DEL_LINE;
-					printf("Write LBA from file (%lld%%)\r\n", (iTotalWrite / 1024) * 100 / (iFileSize / 1024));
-				}
+				long long pct = (iFileSize >= 1024) ?
+					(iTotalWrite / 1024) * 100 / (iFileSize / 1024) :
+					iTotalWrite * 100 / iFileSize;
+				printf("\rWrite LBA from file (%lld%%)   ", pct);
 				fflush(stdout);
 			} else {
 				if (g_pLogObject)
 					g_pLogObject->Record("Error: RKU_WriteLBA failed, err=%d", iRet);
 
-				printf("Write LBA failed!\r\n");
+				printf("\nWrite LBA failed!\n");
 				goto Exit_WriteLBA;
 			}
 		}
+		printf("\n");
 		bSuccess = true;
 	} else {
 		printf("Write LBA quit, creating comm object failed!\r\n");
@@ -3122,7 +3096,7 @@ bool handle_command(int argc, char* argv[], CRKScan *pScan)
 		usage();
 		return true;
 	} else if((strcmp(strCmd.c_str(), "-V") == 0) || (strcmp(strCmd.c_str(), "--VERSION") == 0)) {
-		printf("rkdeveloptool ver %s\r\n", PACKAGE_VERSION);
+		printf("rk-flashtool ver %s\r\n", PACKAGE_VERSION);
 		return true;
 	} else if (strcmp(strCmd.c_str(), "PACK") == 0) {//pack boot loader
 		mergeBoot();

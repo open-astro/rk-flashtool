@@ -6,11 +6,11 @@
 # It streams each partition over SSH directly to local storage.
 #
 # Usage:
-#   ./backup.sh [user@host] [backup_dir]
+#   scripts/backup [user@host] [backup_dir]
 #
 # Examples:
-#   ./backup.sh pi@asiair
-#   ./backup.sh pi@asiair ./my-backup-dir
+#   scripts/backup pi@asiair
+#   scripts/backup pi@asiair ./my-backup-dir
 #
 # Requires:
 #   - sshpass (apt install sshpass)
@@ -20,7 +20,8 @@
 set -euo pipefail
 
 REMOTE="${1:-pi@asiair}"
-BACKUP_DIR="${2:-$(pwd)/asiair-backup}"
+REPODIR="$(cd "$(dirname "$0")/.." && pwd)"
+BACKUP_DIR="${2:-$REPODIR/asiair-backup}"
 PASS="${ASIAIR_PASS:-raspberry}"
 DATE=$(date +%Y%m%d)
 DEVICE="/dev/mmcblk0"

@@ -1,0 +1,34 @@
+#!/bin/bash
+set -e
+
+# Jailbreak an ASIAIR to enable SSH access.
+# Scans the local network for ASIAIR devices and applies the jailbreak
+# via the OTA update mechanism. No physical access required.
+#
+# Usage: scripts/jailbreak [ASIAIR_IP]
+#
+# After jailbreak:  ssh pi@asiair  (password: raspberry)
+#
+# Based on the ASIAIR Jailbreak by @joshumax (public domain).
+
+REPODIR="$(cd "$(dirname "$0")/.." && pwd)"
+JAILBREAK_DIR="$REPODIR/jailbreak"
+
+if [ ! -f "$JAILBREAK_DIR/run_jailbreak.py" ]; then
+    echo "Jailbreak files not found: $JAILBREAK_DIR"
+    exit 1
+fi
+
+if ! command -v python3 >/dev/null 2>&1; then
+    echo "Python 3 is required for the jailbreak."
+    echo "Install it: sudo apt install python3"
+    exit 1
+fi
+
+echo "=== ASIAIR Jailbreak ==="
+echo ""
+echo "This will enable SSH on your ASIAIR via the OTA update mechanism."
+echo "Your ASIAIR must be powered on and connected to the same network."
+echo ""
+
+python3 "$JAILBREAK_DIR/run_jailbreak.py" "$@"

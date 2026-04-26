@@ -17,6 +17,10 @@ cfg/stamp-h1
 # ASIAIR backup images (large binary dumps, never commit)
 asiair-backup/
 *.bin
+!blobs/*.bin
+
+# AstroLinux release images (distributed via GitHub Releases)
+images/
 
 # Hardware artifacts (firmware blobs, kernel modules, compiled device trees)
 *.ko

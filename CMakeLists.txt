@@ -4,10 +4,10 @@ set (PROJECT_NAME "rk-flashtool")
 # The version number.
 set (rk_flashtool_PACKAGE_VERSION "1.32")
 
-file (GLOB LOCAL_CPP_FILES *.cpp)
+file (GLOB LOCAL_CPP_FILES src/*.cpp)
 set (SOURCE_FILES ${SOURCE_FILES} ${LOCAL_CPP_FILES})
 
-file (GLOB LOCAL_H_FILES *.h)
+file (GLOB LOCAL_H_FILES src/*.h src/*.hpp)
 set (HEADER_FILES ${HEADER_FILES} ${LOCAL_H_FILES})
 
 # Set your libusb path
@@ -36,7 +36,7 @@ configure_file (
 # so that we will find config.h
 include_directories (
     "${PROJECT_BINARY_DIR}"
-    "${PROJECT_SOURCE_DIR}"
+    "${PROJECT_SOURCE_DIR}/src"
     "${libusb_INCLUDE_DIR}"
     "${libiconv_INCLUDE_DIR}"
     )

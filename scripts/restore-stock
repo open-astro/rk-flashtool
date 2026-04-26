@@ -1,0 +1,184 @@
+#!/bin/bash
+set -e
+
+# Restore stock ASIAIR firmware from backup.
+#
+# Two modes:
+#   1. Rootfs only (default) — restores just partition 7. Safe, works in Loader mode.
+#   2. Full restore — restores bootloader + all partitions. For recovery from a
+#      bricked device. Requires Maskrom mode.
+#
+# Usage:
+#   sudo scripts/restore-stock          # rootfs only (Loader mode)
+#   sudo scripts/restore-stock --full   # full restore (Maskrom mode)
+
+REPODIR="$(cd "$(dirname "$0")/.." && pwd)"
+TOOL="$REPODIR/rk-flashtool"
+BACKUP="${BACKUP_DIR:-$REPODIR/asiair-backup}"
+
+FULL_RESTORE=false
+if [ "${1:-}" = "--full" ]; then
+    FULL_RESTORE=true
+fi
+
+if [ ! -x "$TOOL" ]; then
+    echo "rk-flashtool not found. Build it first:"
+    echo "  ./autogen.sh && ./configure && make"
+    exit 1
+fi
+
+# --- Verify backup ---
+
+find_backup() {
+    ls -1t "$BACKUP"/*_"$1" 2>/dev/null | head -1
+}
+
+ROOTFS=$(find_backup "p7_rootfs.bin")
+
+if [ -z "$ROOTFS" ]; then
+    echo "ERROR: Stock rootfs backup not found in: $BACKUP"
+    echo "Cannot restore without a backup of partition 7."
+    exit 1
+fi
+
+if $FULL_RESTORE; then
+    BOOTLOADER=$(find_backup "bootloader_pre_partition.bin")
+    UBOOT=$(find_backup "p1_uboot.bin")
+    BOOT=$(find_backup "p3_boot.bin")
+    PI_PART=$(find_backup "p6_pi.bin")
+
+    MISSING=""
+    [ -z "$BOOTLOADER" ] && MISSING="$MISSING  bootloader_pre_partition.bin\n"
+    [ -z "$UBOOT" ] && MISSING="$MISSING  p1_uboot.bin\n"
+    [ -z "$BOOT" ] && MISSING="$MISSING  p3_boot.bin\n"
+
+    if [ -n "$MISSING" ]; then
+        echo "ERROR: Full restore requires these backup files in: $BACKUP"
+        echo -e "$MISSING"
+        echo "Run scripts/backup first, or use rootfs-only restore (without --full)."
+        exit 1
+    fi
+fi
+
+# --- Verify backup sizes (sanity check) ---
+
+check_size() {
+    local file="$1"
+    local min_bytes="$2"
+    local label="$3"
+    local actual
+    actual=$(stat -c%s "$file" 2>/dev/null || echo 0)
+    if [ "$actual" -lt "$min_bytes" ]; then
+        echo "WARNING: $label backup looks too small ($actual bytes)."
+        echo "  File: $file"
+        echo "  This may indicate a corrupted or incomplete backup."
+        read -rp "  Continue anyway? [y/N] " answer
+        case "$answer" in
+            [yY]*) ;;
+            *) echo "Aborted."; exit 1 ;;
+        esac
+    fi
+}
+
+check_size "$ROOTFS" 1000000000 "Rootfs (p7)"
+if $FULL_RESTORE; then
+    check_size "$BOOTLOADER" 1000000 "Bootloader"
+    check_size "$UBOOT" 1000000 "U-Boot (p1)"
+    check_size "$BOOT" 10000000 "Boot image (p3)"
+fi
+
+# --- Begin restore ---
+
+if $FULL_RESTORE; then
+    echo "=== Full Stock Restore (Maskrom) ==="
+    echo ""
+    echo "This will restore the entire stock firmware from your backup:"
+    echo "  - Bootloader (pre-partition area)"
+    echo "  - U-Boot (p1)"
+    echo "  - Boot image (p3)"
+    echo "  - Rootfs (p7)"
+    [ -n "$PI_PART" ] && echo "  - /home/pi (p6)"
+    echo ""
+    echo "The device must be in Maskrom mode."
+    echo ""
+
+    $TOOL ld 2>/dev/null | grep -q "Maskrom" || {
+        if $TOOL ld 2>/dev/null | grep -q "Loader"; then
+            echo "Device is in Loader mode, but full restore requires Maskrom."
+            echo ""
+            echo "To enter Maskrom: power off, open enclosure, short eMMC CLK, power on."
+            echo "See hardware/asiair-plus-rk3568-256g/flashtool-recovery.md"
+            echo ""
+            echo "Or for rootfs-only restore (safer): sudo scripts/restore-stock"
+        else
+            echo "No ASIAIR found in Maskrom mode."
+            echo ""
+            echo "To enter Maskrom: power off, open enclosure, short eMMC CLK, power on."
+        fi
+        exit 1
+    }
+
+    echo "Device in Maskrom — loading DDR/SPL..."
+    LOADER=""
+    if [ -f "$REPODIR/blobs/rk356x_spl_loader_v1.23.114.bin" ]; then
+        LOADER="$REPODIR/blobs/rk356x_spl_loader_v1.23.114.bin"
+    elif [ -f "$(dirname "$REPODIR")/rkbin/rk356x_spl_loader_v1.23.114.bin" ]; then
+        LOADER="$(dirname "$REPODIR")/rkbin/rk356x_spl_loader_v1.23.114.bin"
+    fi
+    if [ -z "$LOADER" ]; then
+        echo "Loader blob not found in blobs/ directory."
+        exit 1
+    fi
+    $TOOL db "$LOADER"
+    sleep 2
+
+    echo "Restoring bootloader (pre-partition area)..."
+    $TOOL wl 0 "$BOOTLOADER"
+    sleep 3
+
+    echo "Restoring U-Boot (p1)..."
+    $TOOL wl 0x4000 "$UBOOT"
+    sleep 3
+
+    echo "Restoring boot image (p3)..."
+    $TOOL wl 0x8000 "$BOOT"
+    sleep 3
+
+    echo "Restoring rootfs (p7) — this will take several minutes..."
+    $TOOL wl 0x1BD38000 "$ROOTFS"
+
+    if [ -n "$PI_PART" ]; then
+        sleep 3
+        echo "Restoring /home/pi (p6)..."
+        $TOOL wl 0x1BC38000 "$PI_PART"
+    fi
+
+else
+    echo "=== Restore Stock Rootfs ==="
+    echo ""
+    echo "This will restore the stock rootfs (partition 7) from your backup."
+    echo "All OpenAstro Linux data will be overwritten."
+    echo "The boot chain is not modified."
+    echo ""
+
+    $TOOL ld 2>/dev/null | grep -q "Loader\|Maskrom" || {
+        echo "No ASIAIR found in Loader or Maskrom mode."
+        echo ""
+        echo "To enter Loader mode: hold the reset button while powering on."
+        exit 1
+    }
+
+    echo "Restoring stock rootfs (p7) — this will take several minutes..."
+    $TOOL wl 0x1BD38000 "$ROOTFS"
+fi
+
+echo ""
+echo "=== Restore complete. Resetting device... ==="
+$TOOL rd || true
+
+echo ""
+echo "Stock ASIAIR firmware has been restored."
+echo "The device will boot the original ZWO software."
+echo ""
+echo "  Default SSH: pi@asiair (password: raspberry)"
+echo "  Requires jailbreak for SSH access."
