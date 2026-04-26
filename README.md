@@ -26,7 +26,7 @@ OpenAstro Linux uses the **stock ASIAIR bootloader and kernel** — only the roo
 ### 1. Build rk-flashtool
 
 ```bash
-sudo apt install build-essential autoconf automake libusb-1.0-0-dev pkg-config sshpass python3
+sudo apt install build-essential autoconf automake libusb-1.0-0-dev pkg-config sshpass python3 wget curl
 git clone https://github.com/open-astro/rk-flashtool.git
 cd rk-flashtool
 ./autogen.sh && ./configure && make

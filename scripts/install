@@ -240,6 +240,11 @@ find_rootfs() {
 ROOTFS_IMG="$(find_rootfs)"
 
 if [ -z "$ROOTFS_IMG" ]; then
+    if ! command -v wget >/dev/null 2>&1 && ! command -v curl >/dev/null 2>&1; then
+        echo "ERROR: wget or curl is required to download the image."
+        echo "  sudo apt install wget curl"
+        exit 1
+    fi
     echo "Downloading OpenAstro Linux image..."
     echo "  $RELEASE_URL"
     echo ""
