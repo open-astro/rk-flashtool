@@ -232,9 +232,10 @@ find_rootfs() {
     local paths=("$IMAGES_DIR/astrolinux-trixie-rk3568" "$(dirname "$REPODIR")/asiair-image/rootfs-stock")
     for p in "${paths[@]}"; do
         for ext in .img .img.gz; do
-            [ -f "${p}${ext}" ] && echo "${p}${ext}" && return
+            [ -f "${p}${ext}" ] && echo "${p}${ext}" && return 0
         done
     done
+    return 0
 }
 
 ROOTFS_IMG="$(find_rootfs)"
