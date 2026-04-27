@@ -99,6 +99,21 @@ echo "Installing stock firmware..."
 rm -rf "$ROOTFS/lib/firmware/"*
 cp -a "$STOCKMNT/lib/firmware/"* "$ROOTFS/lib/firmware/"
 
+# The stock kernel has hardcoded firmware paths (CONFIG_BCMDHD_FW_PATH and
+# CONFIG_BCMDHD_NVRAM_PATH both point to /vendor/etc/firmware/).
+echo "Installing WiFi/BT firmware to /vendor/etc/firmware/..."
+mkdir -p "$ROOTFS/vendor/etc/firmware"
+FW_SRC="$ROOTFS/lib/firmware"
+FW_DST="$ROOTFS/vendor/etc/firmware"
+cp "$FW_SRC/fw_bcm43456c5_ag.bin"       "$FW_DST/fw_bcmdhd.bin"
+cp "$FW_SRC/fw_bcm43456c5_ag.bin"       "$FW_DST/fw_bcm43456c5_ag.bin"
+cp "$FW_SRC/fw_bcm43456c5_ag_apsta.bin" "$FW_DST/fw_bcmdhd_apsta.bin"
+cp "$FW_SRC/fw_bcm43456c5_ag_apsta.bin" "$FW_DST/fw_bcm43456c5_ag_apsta.bin"
+cp "$FW_SRC/fw_bcm43456c5_ag_p2p.bin"   "$FW_DST/fw_bcmdhd_p2p.bin"
+cp "$FW_SRC/nvram_ap6256.txt"            "$FW_DST/nvram.txt"
+cp "$FW_SRC/nvram_ap6256.txt"            "$FW_DST/nvram_ap6256.txt"
+cp "$FW_SRC/BCM4345C5.hcd"              "$FW_DST/BCM4345C5.hcd"
+
 # --- Auto-load pwm_gpio module ---
 mkdir -p "$ROOTFS/etc/modules-load.d"
 echo "pwm_gpio" > "$ROOTFS/etc/modules-load.d/pwm-gpio.conf"
