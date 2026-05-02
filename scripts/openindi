@@ -1,0 +1,358 @@
+#!/bin/bash
+set -e
+
+# Repartition ASIAIR Mini for OpenINDI.
+# Shrinks the asiair image-storage partition (p5) and expands rootfs (p7)
+# to ~19.9 GB, providing space for a full INDI driver stack.
+#
+# Requires a full backup in asiair-backup/ (created by scripts/backup).
+# The device must be in Loader or Maskrom mode.
+#
+# Usage: sudo scripts/openindi
+
+REPODIR="$(cd "$(dirname "$0")/.." && pwd)"
+TOOL="$REPODIR/rk-flashtool"
+BACKUP="${BACKUP_DIR:-$REPODIR/asiair-backup}"
+BUILD_GPT="$REPODIR/scripts/lib/build-gpt.py"
+TMPDIR="${TMPDIR:-/tmp}"
+CLEANUP_FILES=""
+
+source "$REPODIR/scripts/lib/gpt.sh"
+
+DISK_SECTORS=61079552
+
+# New partition layout (p1-p4 unchanged)
+NEW_P5_START=229376
+NEW_P5_END=16777215       # 8 GB
+NEW_P6_START=16777216
+NEW_P6_END=17825791       # 512 MB
+NEW_P7_START=17825792
+NEW_P7_END=59506687       # ~19.9 GB
+NEW_P8_START=59506688
+NEW_P8_END=61079518       # ~768 MB swap
+
+cleanup() {
+    for f in $CLEANUP_FILES; do
+        rm -f "$f"
+    done
+}
+trap cleanup EXIT
+
+add_tmp() {
+    CLEANUP_FILES="$CLEANUP_FILES $1"
+}
+
+# --- Preflight checks ---
+
+for cmd in python3 e2fsck resize2fs mkfs.vfat mkswap truncate; do
+    if ! command -v "$cmd" >/dev/null 2>&1; then
+        echo "ERROR: $cmd is required but not found."
+        case "$cmd" in
+            e2fsck|resize2fs) echo "  Install: sudo apt install e2fsprogs" ;;
+            mkfs.vfat) echo "  Install: sudo apt install dosfstools" ;;
+        esac
+        exit 1
+    fi
+done
+
+if [ ! -x "$TOOL" ]; then
+    echo "rk-flashtool not found. Build it first:"
+    echo "  ./autogen.sh && ./configure && make"
+    exit 1
+fi
+
+find_backup() {
+    ls -1t "$BACKUP"/*_"$1" 2>/dev/null | head -1
+}
+
+BOOTLOADER=$(find_backup "bootloader_pre_partition.bin")
+UBOOT=$(find_backup "p1_uboot.bin")
+MISC=$(find_backup "p2_misc.bin")
+BOOT=$(find_backup "p3_boot.bin")
+RECOVERY=$(find_backup "p4_recovery.bin")
+PI_PART=$(find_backup "p6_pi.bin")
+ROOTFS=$(find_backup "p7_rootfs.bin")
+GPT_FILE=$(find_gpt_backup "$BACKUP")
+
+MISSING=""
+[ -z "$BOOTLOADER" ] && MISSING="$MISSING  bootloader_pre_partition.bin\n"
+[ -z "$UBOOT" ] && MISSING="$MISSING  p1_uboot.bin\n"
+[ -z "$BOOT" ] && MISSING="$MISSING  p3_boot.bin\n"
+[ -z "$PI_PART" ] && MISSING="$MISSING  p6_pi.bin\n"
+[ -z "$ROOTFS" ] && MISSING="$MISSING  p7_rootfs.bin\n"
+[ -z "$GPT_FILE" ] && MISSING="$MISSING  gpt_primary.bin\n"
+
+if [ -n "$MISSING" ]; then
+    echo "ERROR: Required backup files not found in: $BACKUP"
+    echo -e "$MISSING"
+    echo "Run scripts/backup first."
+    exit 1
+fi
+
+# Check available disk space (~21 GB needed for temp rootfs)
+NEW_P7_SECTORS=$((NEW_P7_END - NEW_P7_START + 1))
+NEW_P7_BYTES=$((NEW_P7_SECTORS * 512))
+AVAIL_KB=$(df --output=avail "$TMPDIR" 2>/dev/null | tail -1 | tr -d ' ')
+NEED_KB=$((NEW_P7_BYTES / 1024 + 1048576))  # rootfs + 1GB margin
+if [ -n "$AVAIL_KB" ] && [ "$AVAIL_KB" -lt "$NEED_KB" ]; then
+    echo "ERROR: Not enough disk space in $TMPDIR"
+    echo "  Available: $((AVAIL_KB / 1048576)) GB"
+    echo "  Required:  $((NEED_KB / 1048576)) GB"
+    echo ""
+    echo "Set TMPDIR to a location with more space:"
+    echo "  TMPDIR=/path/to/large/disk sudo scripts/openindi"
+    exit 1
+fi
+
+# --- Show plan ---
+
+echo "=== OpenINDI — ASIAIR Repartition ==="
+echo ""
+echo "This will repartition your ASIAIR Mini to expand the root filesystem"
+echo "for a full INDI driver installation."
+echo ""
+echo "Current layout (from backup GPT):"
+for p in 1 2 3 4 5 6 7 8; do
+    start=$(gpt_part_start "$GPT_FILE" "$p")
+    [ "$start" -eq 0 ] && [ "$p" -ne 1 ] && break
+    # Read end LBA
+    end_offset=$((1024 + (p - 1) * 128 + 40))
+    end_val=$(dd if="$GPT_FILE" bs=1 skip="$end_offset" count=8 2>/dev/null | od -An -tu1)
+    end_arr=($end_val)
+    end=0; mult=1
+    for i in 0 1 2 3 4 5 6 7; do
+        end=$((end + ${end_arr[$i]} * mult)); mult=$((mult * 256))
+    done
+    sectors=$((end - start + 1))
+    size_mb=$((sectors * 512 / 1048576))
+    if [ "$size_mb" -ge 1024 ]; then
+        size_str="$(echo "scale=1; $size_mb / 1024" | bc) GB"
+    else
+        size_str="${size_mb} MB"
+    fi
+    printf "  p%d: sector %-10d  %s\n" "$p" "$start" "$size_str"
+done
+
+echo ""
+echo "New layout:"
+printf "  p1: sector %-10d  4 MB      (unchanged)\n" 16384
+printf "  p2: sector %-10d  4 MB      (unchanged)\n" 24576
+printf "  p3: sector %-10d  64 MB     (unchanged)\n" 32768
+printf "  p4: sector %-10d  32 MB     (unchanged)\n" 163840
+printf "  p5: sector %-10d  8 GB      (was 20 GB)\n" $NEW_P5_START
+printf "  p6: sector %-10d  512 MB    (moved)\n" $NEW_P6_START
+printf "  p7: sector %-10d  19.9 GB   (was 7 GB)\n" $NEW_P7_START
+printf "  p8: sector %-10d  768 MB    (was 1.5 GB)\n" $NEW_P8_START
+echo ""
+echo "WARNING: All data on the ASIAIR image storage (p5) will be erased."
+echo "         The root filesystem and /home/pi will be restored from backup."
+echo ""
+read -rp "Continue? [y/N] " answer
+case "$answer" in
+    [yY]*) ;;
+    *) echo "Aborted."; exit 0 ;;
+esac
+
+# --- Verify device ---
+
+$TOOL ld 2>/dev/null | grep -q "Loader\|Maskrom" || {
+    echo ""
+    echo "No ASIAIR found in Loader or Maskrom mode."
+    echo ""
+    echo "To enter Loader mode: hold the reset button while powering on."
+    exit 1
+}
+
+if $TOOL ld 2>/dev/null | grep -q "Maskrom"; then
+    echo ""
+    echo "Device in Maskrom — loading DDR/SPL..."
+    LOADER=""
+    if [ -f "$REPODIR/blobs/rk356x_spl_loader_v1.23.114.bin" ]; then
+        LOADER="$REPODIR/blobs/rk356x_spl_loader_v1.23.114.bin"
+    elif [ -f "$(dirname "$REPODIR")/rkbin/rk356x_spl_loader_v1.23.114.bin" ]; then
+        LOADER="$(dirname "$REPODIR")/rkbin/rk356x_spl_loader_v1.23.114.bin"
+    fi
+    if [ -z "$LOADER" ]; then
+        echo "Loader blob not found in blobs/ directory."
+        exit 1
+    fi
+    $TOOL db "$LOADER"
+    sleep 2
+fi
+
+# --- Build new GPT ---
+
+echo ""
+echo "Building new GPT..."
+GPT_OUT="$(mktemp "$TMPDIR/openindi-gpt-XXXXXX.bin")"
+add_tmp "$GPT_OUT"
+
+python3 "$BUILD_GPT" \
+    --source "$GPT_FILE" \
+    --output "$GPT_OUT" \
+    --disk-sectors "$DISK_SECTORS" \
+    --partition "5:$NEW_P5_START:$NEW_P5_END" \
+    --partition "6:$NEW_P6_START:$NEW_P6_END" \
+    --partition "7:$NEW_P7_START:$NEW_P7_END" \
+    --partition "8:$NEW_P8_START:$NEW_P8_END"
+
+# --- Prepare bootloader with new GPT ---
+
+echo ""
+echo "Preparing bootloader with new partition table..."
+BOOTLOADER_MOD="$(mktemp "$TMPDIR/openindi-bootloader-XXXXXX.bin")"
+add_tmp "$BOOTLOADER_MOD"
+cp "$BOOTLOADER" "$BOOTLOADER_MOD"
+
+# Overlay new GPT primary (first 34 sectors = 17408 bytes) onto bootloader image
+GPT_PRIMARY_SIZE=$((34 * 512))
+dd if="$GPT_OUT" of="$BOOTLOADER_MOD" bs=1 count="$GPT_PRIMARY_SIZE" conv=notrunc 2>/dev/null
+
+# --- Prepare VFAT for p5 ---
+
+echo "Creating empty VFAT for p5 (8 GB)..."
+NEW_P5_SECTORS=$((NEW_P5_END - NEW_P5_START + 1))
+VFAT_IMG="$(mktemp "$TMPDIR/openindi-vfat-XXXXXX.img")"
+add_tmp "$VFAT_IMG"
+truncate -s $((NEW_P5_SECTORS * 512)) "$VFAT_IMG"
+mkfs.vfat -F 32 -n ASIAIR "$VFAT_IMG" >/dev/null 2>&1
+
+# Only need to write the first 64 MB (covers superblock + FAT tables)
+VFAT_WRITE="$(mktemp "$TMPDIR/openindi-vfat-hdr-XXXXXX.img")"
+add_tmp "$VFAT_WRITE"
+dd if="$VFAT_IMG" of="$VFAT_WRITE" bs=1M count=64 2>/dev/null
+rm -f "$VFAT_IMG"
+
+# --- Prepare resized rootfs ---
+
+echo "Preparing rootfs (resizing from 7 GB to ~19.9 GB)..."
+echo "  Copying backup rootfs to temp..."
+ROOTFS_MOD="$(mktemp "$TMPDIR/openindi-rootfs-XXXXXX.img")"
+add_tmp "$ROOTFS_MOD"
+cp "$ROOTFS" "$ROOTFS_MOD"
+
+echo "  Expanding to $((NEW_P7_BYTES / 1073741824)) GB..."
+truncate -s "$NEW_P7_BYTES" "$ROOTFS_MOD"
+
+echo "  Checking filesystem..."
+e2fsck -fy "$ROOTFS_MOD" >/dev/null 2>&1 || true
+
+echo "  Resizing filesystem to fill partition..."
+resize2fs "$ROOTFS_MOD" >/dev/null 2>&1
+
+echo "  Verifying..."
+e2fsck -fy "$ROOTFS_MOD" >/dev/null 2>&1 || true
+echo "  Rootfs ready ($(du -h "$ROOTFS_MOD" | cut -f1))."
+
+# --- Prepare swap ---
+
+echo "Creating swap header for p8 (768 MB)..."
+NEW_P8_SECTORS=$((NEW_P8_END - NEW_P8_START + 1))
+SWAP_IMG="$(mktemp "$TMPDIR/openindi-swap-XXXXXX.img")"
+add_tmp "$SWAP_IMG"
+truncate -s $((NEW_P8_SECTORS * 512)) "$SWAP_IMG"
+mkswap -L swap "$SWAP_IMG" >/dev/null 2>&1
+
+# Only need the first 4 KB (swap header)
+SWAP_WRITE="$(mktemp "$TMPDIR/openindi-swap-hdr-XXXXXX.img")"
+add_tmp "$SWAP_WRITE"
+dd if="$SWAP_IMG" of="$SWAP_WRITE" bs=4096 count=1 2>/dev/null
+rm -f "$SWAP_IMG"
+
+# --- USB write helpers ---
+
+find_rk_usb() {
+    for d in /sys/bus/usb/devices/*/idVendor; do
+        if [ "$(cat "$d" 2>/dev/null)" = "2207" ]; then
+            echo "$(dirname "$d")"
+            return 0
+        fi
+    done
+}
+
+reset_usb() {
+    local dev=$(find_rk_usb)
+    if [ -n "$dev" ]; then
+        local busnum=$(cat "$dev/busnum" 2>/dev/null)
+        local devnum=$(cat "$dev/devnum" 2>/dev/null)
+        if [ -n "$busnum" ] && [ -n "$devnum" ]; then
+            usbreset "$(printf "/dev/bus/usb/%03d/%03d" "$busnum" "$devnum")" >/dev/null 2>&1 || true
+        fi
+    fi
+    sleep 2
+}
+
+flash_write() {
+    local label="$1"
+    local sector="$2"
+    local file="$3"
+    local rc=0
+    echo "$label..."
+    $TOOL wl "$sector" "$file" || rc=$?
+    if [ $rc -ne 0 ]; then
+        echo "  Write failed (rc=$rc), resetting USB and retrying..."
+        reset_usb
+        $TOOL wl "$sector" "$file" || {
+            echo "  ERROR: $label failed on retry."
+            exit 1
+        }
+    fi
+    reset_usb
+}
+
+# --- Write to device ---
+
+echo ""
+echo "=== Writing to device ==="
+echo ""
+
+flash_write "Writing bootloader + new GPT (sectors 0-16383)" 0 "$BOOTLOADER_MOD"
+
+# Backup GPT at end of disk
+BACKUP_GPT_SECTOR=$((DISK_SECTORS - 33))
+BACKUP_GPT_FILE="$(mktemp "$TMPDIR/openindi-bgpt-XXXXXX.bin")"
+add_tmp "$BACKUP_GPT_FILE"
+dd if="$GPT_OUT" of="$BACKUP_GPT_FILE" bs=512 skip=34 count=33 2>/dev/null
+flash_write "Writing backup GPT (sector $BACKUP_GPT_SECTOR)" "$BACKUP_GPT_SECTOR" "$BACKUP_GPT_FILE"
+
+flash_write "Restoring U-Boot (p1)" 0x4000 "$UBOOT"
+
+if [ -n "$MISC" ]; then
+    flash_write "Restoring misc (p2)" 0x6000 "$MISC"
+fi
+
+flash_write "Restoring boot image (p3)" 0x8000 "$BOOT"
+
+if [ -n "$RECOVERY" ]; then
+    flash_write "Restoring recovery (p4)" 0x28000 "$RECOVERY"
+fi
+
+flash_write "Writing ASIAIR VFAT (p5, 64 MB header)" "$NEW_P5_START" "$VFAT_WRITE"
+
+flash_write "Restoring /home/pi (p6)" "$NEW_P6_START" "$PI_PART"
+
+SIZE=$(du -h "$ROOTFS_MOD" | cut -f1)
+echo "Writing rootfs (p7, $SIZE) — this will take several minutes..."
+flash_write "Writing rootfs" "$NEW_P7_START" "$ROOTFS_MOD"
+
+flash_write "Writing swap header (p8)" "$NEW_P8_START" "$SWAP_WRITE"
+
+echo ""
+echo "=== Repartition complete. Resetting device... ==="
+$TOOL rd || true
+
+echo ""
+echo "OpenINDI repartition is complete."
+echo ""
+echo "New partition layout:"
+echo "  p5 (asiair):  8 GB    (image storage)"
+echo "  p6 (pi):      512 MB  (/home/pi)"
+echo "  p7 (rootfs):  19.9 GB (root filesystem)"
+echo "  p8 (swap):    768 MB"
+echo ""
+echo "  SSH:      ssh pi@10.0.0.1 (password: raspberry)"
+echo ""
+echo "Next steps:"
+echo "  1. Connect to ASIAIR WiFi and verify SSH access"
+echo "  2. Remount rootfs read-write:  sudo mount -o remount,rw /"
+echo "  3. Install additional INDI drivers"

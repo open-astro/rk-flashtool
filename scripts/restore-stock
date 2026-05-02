@@ -4,17 +4,19 @@ set -e
 # Restore stock ASIAIR firmware from backup.
 #
 # Two modes:
-#   1. Rootfs only (default) — restores just partition 7. Safe, works in Loader mode.
-#   2. Full restore — restores bootloader + all partitions. For recovery from a
-#      bricked device. Requires Maskrom mode.
+#   1. Rootfs only (default) — restores just partition 7.
+#   2. Full restore — restores bootloader + all partitions.
+# Both work in Loader or Maskrom mode.
 #
 # Usage:
-#   sudo scripts/restore-stock          # rootfs only (Loader mode)
-#   sudo scripts/restore-stock --full   # full restore (Maskrom mode)
+#   sudo scripts/restore-stock          # rootfs only
+#   sudo scripts/restore-stock --full   # full restore (all partitions)
 
 REPODIR="$(cd "$(dirname "$0")/.." && pwd)"
 TOOL="$REPODIR/rk-flashtool"
 BACKUP="${BACKUP_DIR:-$REPODIR/asiair-backup}"
+
+source "$REPODIR/scripts/lib/gpt.sh"
 
 FULL_RESTORE=false
 if [ "${1:-}" = "--full" ]; then
@@ -44,7 +46,10 @@ fi
 if $FULL_RESTORE; then
     BOOTLOADER=$(find_backup "bootloader_pre_partition.bin")
     UBOOT=$(find_backup "p1_uboot.bin")
+    MISC=$(find_backup "p2_misc.bin")
     BOOT=$(find_backup "p3_boot.bin")
+    RECOVERY=$(find_backup "p4_recovery.bin")
+    ASIAIR_HDR=$(find_backup "p5_asiair_header.bin")
     PI_PART=$(find_backup "p6_pi.bin")
 
     MISSING=""
@@ -59,6 +64,34 @@ if $FULL_RESTORE; then
         exit 1
     fi
 fi
+
+# --- Read partition offsets from GPT backup ---
+
+GPT_FILE=$(find_gpt_backup "$BACKUP")
+if [ -z "$GPT_FILE" ]; then
+    echo "ERROR: GPT backup (gpt_primary.bin) not found in: $BACKUP"
+    echo "Cannot determine partition offsets without a GPT backup."
+    exit 1
+fi
+
+P2_START=$(gpt_part_start "$GPT_FILE" 2)
+P4_START=$(gpt_part_start "$GPT_FILE" 4)
+P5_START=$(gpt_part_start "$GPT_FILE" 5)
+P6_START=$(gpt_part_start "$GPT_FILE" 6)
+P7_START=$(gpt_part_start "$GPT_FILE" 7)
+
+if [ "$P7_START" -eq 0 ]; then
+    echo "ERROR: Could not read partition 7 offset from GPT backup."
+    exit 1
+fi
+
+echo "Partition offsets from GPT backup:"
+printf "  p2 (misc):     sector %d (0x%X)\n" "$P2_START" "$P2_START"
+printf "  p4 (recovery): sector %d (0x%X)\n" "$P4_START" "$P4_START"
+printf "  p5 (asiair):   sector %d (0x%X)\n" "$P5_START" "$P5_START"
+printf "  p6 (pi):       sector %d (0x%X)\n" "$P6_START" "$P6_START"
+printf "  p7 (rootfs):   sector %d (0x%X)\n" "$P7_START" "$P7_START"
+echo ""
 
 # --- Verify backup sizes (sanity check) ---
 
@@ -90,47 +123,42 @@ fi
 # --- Begin restore ---
 
 if $FULL_RESTORE; then
-    echo "=== Full Stock Restore (Maskrom) ==="
+    echo "=== Full Stock Restore ==="
     echo ""
     echo "This will restore the entire stock firmware from your backup:"
-    echo "  - Bootloader (pre-partition area)"
+    echo "  - Bootloader (pre-partition area, includes GPT)"
     echo "  - U-Boot (p1)"
+    [ -n "$MISC" ] && echo "  - misc (p2)"
     echo "  - Boot image (p3)"
-    echo "  - Rootfs (p7)"
+    [ -n "$RECOVERY" ] && echo "  - Recovery (p4)"
+    [ -n "$ASIAIR_HDR" ] && echo "  - ASIAIR VFAT header (p5)"
     [ -n "$PI_PART" ] && echo "  - /home/pi (p6)"
-    echo ""
-    echo "The device must be in Maskrom mode."
+    echo "  - Rootfs (p7)"
     echo ""
 
-    $TOOL ld 2>/dev/null | grep -q "Maskrom" || {
-        if $TOOL ld 2>/dev/null | grep -q "Loader"; then
-            echo "Device is in Loader mode, but full restore requires Maskrom."
-            echo ""
-            echo "To enter Maskrom: power off, open enclosure, short eMMC CLK, power on."
-            echo "See hardware/asiair-plus-rk3568-256g/flashtool-recovery.md"
-            echo ""
-            echo "Or for rootfs-only restore (safer): sudo scripts/restore-stock"
-        else
-            echo "No ASIAIR found in Maskrom mode."
-            echo ""
-            echo "To enter Maskrom: power off, open enclosure, short eMMC CLK, power on."
-        fi
+    $TOOL ld 2>/dev/null | grep -q "Loader\|Maskrom" || {
+        echo "No ASIAIR found in Loader or Maskrom mode."
+        echo ""
+        echo "To enter Loader mode: hold the reset button while powering on."
+        echo "To enter Maskrom: power off, open enclosure, short eMMC CLK, power on."
         exit 1
     }
 
-    echo "Device in Maskrom — loading DDR/SPL..."
-    LOADER=""
-    if [ -f "$REPODIR/blobs/rk356x_spl_loader_v1.23.114.bin" ]; then
-        LOADER="$REPODIR/blobs/rk356x_spl_loader_v1.23.114.bin"
-    elif [ -f "$(dirname "$REPODIR")/rkbin/rk356x_spl_loader_v1.23.114.bin" ]; then
-        LOADER="$(dirname "$REPODIR")/rkbin/rk356x_spl_loader_v1.23.114.bin"
+    if $TOOL ld 2>/dev/null | grep -q "Maskrom"; then
+        echo "Device in Maskrom — loading DDR/SPL..."
+        LOADER=""
+        if [ -f "$REPODIR/blobs/rk356x_spl_loader_v1.23.114.bin" ]; then
+            LOADER="$REPODIR/blobs/rk356x_spl_loader_v1.23.114.bin"
+        elif [ -f "$(dirname "$REPODIR")/rkbin/rk356x_spl_loader_v1.23.114.bin" ]; then
+            LOADER="$(dirname "$REPODIR")/rkbin/rk356x_spl_loader_v1.23.114.bin"
+        fi
+        if [ -z "$LOADER" ]; then
+            echo "Loader blob not found in blobs/ directory."
+            exit 1
+        fi
+        $TOOL db "$LOADER"
+        sleep 2
     fi
-    if [ -z "$LOADER" ]; then
-        echo "Loader blob not found in blobs/ directory."
-        exit 1
-    fi
-    $TOOL db "$LOADER"
-    sleep 2
 
     echo "Restoring bootloader (pre-partition area)..."
     $TOOL wl 0 "$BOOTLOADER"
@@ -140,18 +168,36 @@ if $FULL_RESTORE; then
     $TOOL wl 0x4000 "$UBOOT"
     sleep 3
 
+    if [ -n "$MISC" ]; then
+        echo "Restoring misc (p2)..."
+        $TOOL wl "$P2_START" "$MISC"
+        sleep 3
+    fi
+
     echo "Restoring boot image (p3)..."
     $TOOL wl 0x8000 "$BOOT"
     sleep 3
 
-    echo "Restoring rootfs (p7) — this will take several minutes..."
-    $TOOL wl 0x1BD38000 "$ROOTFS"
+    if [ -n "$RECOVERY" ]; then
+        echo "Restoring recovery (p4)..."
+        $TOOL wl "$P4_START" "$RECOVERY"
+        sleep 3
+    fi
+
+    if [ -n "$ASIAIR_HDR" ]; then
+        echo "Restoring ASIAIR VFAT header (p5)..."
+        $TOOL wl "$P5_START" "$ASIAIR_HDR"
+        sleep 3
+    fi
 
     if [ -n "$PI_PART" ]; then
-        sleep 3
         echo "Restoring /home/pi (p6)..."
-        $TOOL wl 0x1BC38000 "$PI_PART"
+        $TOOL wl "$P6_START" "$PI_PART"
+        sleep 3
     fi
+
+    echo "Restoring rootfs (p7) — this will take several minutes..."
+    $TOOL wl "$P7_START" "$ROOTFS"
 
 else
     echo "=== Restore Stock Rootfs ==="
@@ -169,7 +215,7 @@ else
     }
 
     echo "Restoring stock rootfs (p7) — this will take several minutes..."
-    $TOOL wl 0x1BD38000 "$ROOTFS"
+    $TOOL wl "$P7_START" "$ROOTFS"
 fi
 
 echo ""

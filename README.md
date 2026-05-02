@@ -9,8 +9,9 @@ Replace the stock ZWO firmware on your ASIAIR Plus with **Debian 13 (Trixie)** w
 | Device | SoC | Storage | Status |
 |--------|-----|---------|--------|
 | ASIAIR Plus 256GB | RK3568 | 232 GB eMMC | Fully supported |
+| ASIAIR Mini | RV1126 | 32 GB eMMC | Backup, restore, jailbreak, repartition |
 
-The ASIAIR Mini (RV1126) is documented in [`hardware/asiair-mini-rv1126/`](hardware/asiair-mini-rv1126/) but not yet supported for flashing.
+See [`hardware/asiair-mini-rv1126/`](hardware/asiair-mini-rv1126/) for Mini-specific docs.
 
 ## How It Works
 
@@ -144,12 +145,20 @@ sudo scripts/flash-rootfs
 | `scripts/flash-all` | Full flash: restore stock boot chain + write OpenAstro Linux rootfs |
 | `scripts/flash-rootfs` | Flash rootfs image to p7 only |
 | `scripts/restore-stock` | Restore stock rootfs, or `--full` for complete recovery |
+| `scripts/openindi` | Repartition ASIAIR Mini: expand rootfs from 7 GB to ~20 GB for full INDI support |
 | `scripts/reset-device` | Reboot the device via USB |
 | `scripts/status` | Check if a device is connected and its mode |
 | `scripts/build/rootfs-setup.sh` | Configure a debootstrap rootfs for the ASIAIR |
 | `scripts/build/rootfs-image.sh` | Package rootfs directory into flashable ext4 image |
 
 ## Hardware Documentation
+
+### ASIAIR Mini (RV1126)
+
+- [`openindi.md`](hardware/asiair-mini-rv1126/openindi.md) — Repartition guide for expanded INDI support
+- [`recovery.md`](hardware/asiair-mini-rv1126/recovery.md) — Maskrom recovery, partition table, hardware specs
+
+### ASIAIR Plus (RK3568)
 
 Detailed hardware reference is in [`hardware/asiair-plus-rk3568-256g/`](hardware/asiair-plus-rk3568-256g/):
 

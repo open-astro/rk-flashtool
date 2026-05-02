@@ -290,8 +290,13 @@ def begin_update(address, file):
 
 
 if __name__ == '__main__':
-    if len(sys.argv) >= 2 and sys.argv[1] != '--scan':
-        address = sys.argv[1]
+    confirmed_asiair = False
+    args = [a for a in sys.argv[1:] if a != '--confirmed']
+    if '--confirmed' in sys.argv:
+        confirmed_asiair = True
+
+    if args and args[0] != '--scan':
+        address = args[0]
     else:
         devices = scan_network()
 
@@ -320,6 +325,9 @@ if __name__ == '__main__':
                 print('Invalid selection.')
                 sys.exit(1)
 
+    if confirmed_asiair:
+        print(f'\nDevice confirmed as ASIAIR via WiFi connection.')
+
     print(f'\nConnecting to {address}...')
 
     open_ports = []
@@ -335,8 +343,8 @@ if __name__ == '__main__':
         hostname_str = f' ({info["hostname"]})' if 'hostname' in info else ''
 
         print(f'\n--- Device Identification for {address}{hostname_str} ---')
-        if info['is_asiair']:
-            print(f'  Device is ASIAIR: YES (confidence: {info["confidence"]})')
+        if info['is_asiair'] or confirmed_asiair:
+            print(f'  Device is ASIAIR: YES (confidence: {"wifi" if confirmed_asiair else info["confidence"]})')
         else:
             print(f'  Device is ASIAIR: UNKNOWN (confidence: {info["confidence"]})')
         print(f'  Estimated firmware: {fw}')
@@ -345,22 +353,24 @@ if __name__ == '__main__':
             print(f'  {detail}')
         print('---')
 
-        if not info['is_asiair']:
+        if not info['is_asiair'] and not confirmed_asiair:
             print('\nWarning: This device could not be confirmed as an ASIAIR.')
             choice = input('Continue anyway? [y/N] ')
             if choice.lower() != 'y':
                 sys.exit(1)
     else:
         print(f'\nWarning: No open ports found on {address}. Device may be offline.')
-        choice = input('Continue anyway? [y/N] ')
-        if choice.lower() != 'y':
-            sys.exit(1)
+        if not confirmed_asiair:
+            choice = input('Continue anyway? [y/N] ')
+            if choice.lower() != 'y':
+                sys.exit(1)
 
     if OTA_COMMAND_PORT not in open_ports and open_ports:
         print(f'\nWarning: OTA command port {OTA_COMMAND_PORT} is not open.')
         print('The jailbreak may not work on this firmware version.')
-        choice = input('Continue anyway? [y/N] ')
-        if choice.lower() != 'y':
-            sys.exit(1)
+        if not confirmed_asiair:
+            choice = input('Continue anyway? [y/N] ')
+            if choice.lower() != 'y':
+                sys.exit(1)
 
     begin_update(address, JAILBREAK_FILE)

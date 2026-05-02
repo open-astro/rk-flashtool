@@ -1,15 +1,18 @@
 #!/bin/bash
 set -e
 
-# Flash OpenAstro Linux to ASIAIR Plus.
+# Flash OpenAstro Linux to ASIAIR.
 # Restores stock boot chain (bootloader + kernel) and writes the OpenAstro Linux
 # rootfs image to p7. Stock partition table is preserved.
+# Partition offsets are read from the GPT backup, so this works for any ASIAIR model.
 #
 # Usage: sudo scripts/flash-all [rootfs-image]
 
 REPODIR="$(cd "$(dirname "$0")/.." && pwd)"
 TOOL="$REPODIR/rk-flashtool"
 BACKUP="${BACKUP_DIR:-$REPODIR/asiair-backup}"
+
+source "$REPODIR/scripts/lib/gpt.sh"
 if [ -z "$LOADER" ]; then
     if [ -f "$REPODIR/blobs/rk356x_spl_loader_v1.23.114.bin" ]; then
         LOADER="$REPODIR/blobs/rk356x_spl_loader_v1.23.114.bin"
@@ -102,6 +105,21 @@ if [ -z "$BOOTLOADER" ] || [ -z "$UBOOT" ] || [ -z "$BOOT" ]; then
     exit 1
 fi
 
+GPT_FILE=$(find_gpt_backup "$BACKUP")
+if [ -z "$GPT_FILE" ]; then
+    echo "ERROR: GPT backup (gpt_primary.bin) not found in: $BACKUP"
+    echo "Cannot determine partition offsets without a GPT backup."
+    exit 1
+fi
+
+P7_START=$(gpt_part_start "$GPT_FILE" 7)
+if [ "$P7_START" -eq 0 ]; then
+    echo "ERROR: Could not read partition 7 offset from GPT backup."
+    exit 1
+fi
+printf "Partition 7 (rootfs) offset from GPT backup: sector %d (0x%X)\n" "$P7_START" "$P7_START"
+echo ""
+
 # Find rootfs image — try .img, then .img.gz
 ROOTFS_IMG="$ROOTFS_ARG"
 if [ ! -f "$ROOTFS_IMG" ] && [ -f "${ROOTFS_IMG}.gz" ]; then
@@ -173,7 +191,7 @@ flash_write "Restoring stock boot image (p3)" 0x8000 "$BOOT"
 SIZE=$(du -h "$ROOTFS_IMG" | cut -f1)
 echo "Flashing OpenAstro Linux rootfs to p7 ($SIZE)..."
 echo "This may take several minutes over USB..."
-flash_write "Writing rootfs" 0x1BD38000 "$ROOTFS_IMG"
+flash_write "Writing rootfs" "$P7_START" "$ROOTFS_IMG"
 
 echo ""
 echo "=== Flash complete. Resetting device... ==="

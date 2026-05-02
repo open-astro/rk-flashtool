@@ -4,16 +4,54 @@
 
 | Property | Value |
 |----------|-------|
-| SoC | RV1126 (ARMv7, Cortex-A7) |
+| SoC | RV1126 (ARMv7, Cortex-A7, quad-core) |
 | USB VID | 0x2207 (Rockchip) |
 | USB PID | 0x110B |
-| eMMC | 32 GB (61079552 sectors) |
-| Stock U-Boot | 2017.09-gc6ee75eec1-210728 |
+| RAM | 2 GB DDR3 (~1.75 GB usable) |
+| eMMC | 32 GB (61079552 sectors), Biwin, manfid 0xF4 |
+| Kernel | 4.19.111 (SMP PREEMPT, armv7l) |
+| OS | Raspbian GNU/Linux 10 (buster) |
 | dmesg model | "Rockchip RV1126 AirMini Board" |
+| WiFi | AP6256 (Broadcom BCM43456), driver: bcmdhd |
+| USB hub | Cypress USB 2.0 Hub (VID 04b4, PID 6572) |
+| Power | USB-C bus powered (no DC adapter needed) |
 
 **Note:** The USB PID 0x110B is shared between RV1106 and RV1126. The ASIAIR Mini
 uses the RV1126 despite the PID suggesting otherwise. Confirmed via `dmesg` on a
 jailbroken unit.
+
+## WiFi / Network
+
+The ASIAIR Mini runs hostapd on a virtual AP interface (`uap0`) with `wlan0`
+available for upstream client connections (bridge mode).
+
+| Property | Value |
+|----------|-------|
+| SSID pattern | `ASIAIR_XXXXXXXX` (hex suffix, unique per unit) |
+| Default password | `12345678` |
+| Gateway IP | `10.0.0.1/24` |
+| 5 GHz | Channel 36, 802.11n (hw_mode=a) |
+| 2.4 GHz | Channel 11, 802.11n (hw_mode=g) |
+| Encryption | WPA2-PSK (CCMP) |
+| Config files | `/home/pi/AP_5G.conf`, `/home/pi/AP_2.4G.conf` |
+| Active config | `/home/pi/wlan0.conf` (copied from 5G or 2.4G) |
+
+SSH access (after jailbreak): `ssh pi@10.0.0.1` (password: `raspberry`)
+
+## ASIAIR Application
+
+The ZWO ASIAIR app lives in `/home/pi/ASIAIR/bin/` and consists of:
+
+| Process | Ports | Purpose |
+|---------|-------|---------|
+| `zwoair_updater` | 4350, 4360 | OTA updates (jailbreak target) |
+| `zwoair_guider` | 4030, 4040, 4400, 4500 | Autoguiding |
+| `zwoair_imager` | 4700, 4800, 4801 | Imaging / camera control |
+| `sshd` | 22 | OpenSSH (after jailbreak) |
+| `smbd` | 139, 445 | Samba file sharing |
+
+Port 4801 is present on recent firmware (previously used to distinguish
+firmware versions, but now present on the Mini regardless).
 
 ## Partition Table (from full_backup.img)
 
@@ -184,9 +222,14 @@ sleep 3
 
 | | ASIAIR Plus | ASIAIR Mini |
 |---|---|---|
-| SoC | RK3568 (ARM64, Cortex-A55) | RV1126 (ARMv7, Cortex-A7) |
-| eMMC | 256 GB | 32 GB |
+| SoC | RK3568 (ARM64, Cortex-A55) | RV1126 (ARMv7, Cortex-A7, quad-core) |
+| RAM | 4 GB | 2 GB DDR3 |
+| eMMC | 256 GB | 32 GB (Biwin) |
 | Power | 12V DC required | USB-C bus powered |
+| Kernel | 4.19.x (aarch64) | 4.19.111 (armv7l) |
+| OS | Raspbian GNU/Linux 10 | Raspbian GNU/Linux 10 (buster) |
+| WiFi chip | AP6275S (BCM43752) | AP6256 (BCM43456) |
+| WiFi gateway | 10.0.0.1 | 10.0.0.1 |
 | DDR init | Generic rkbin blob works | **Stock blob required** (custom DDR timing) |
 | SPL loader | `rk356x_spl_loader_v1.23.114.bin` | Must extract from backup |
 | Maskrom entry | Automatic (no bootloader = Maskrom) | Automatic (same behavior) |

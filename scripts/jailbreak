@@ -2,10 +2,12 @@
 set -e
 
 # Jailbreak an ASIAIR to enable SSH access.
-# Scans the local network for ASIAIR devices and applies the jailbreak
-# via the OTA update mechanism. No physical access required.
+# Connects to the ASIAIR's WiFi hotspot (ASIAIR_XXXXX), then applies the
+# jailbreak via the OTA update mechanism. No physical access required.
 #
-# Usage: scripts/jailbreak [ASIAIR_IP]
+# Usage:
+#   scripts/jailbreak              # auto-scan for ASIAIR WiFi and connect
+#   scripts/jailbreak [ASIAIR_IP]  # skip WiFi, jailbreak a known IP
 #
 # After jailbreak:  ssh pi@asiair  (password: raspberry)
 #
@@ -13,6 +15,7 @@ set -e
 
 REPODIR="$(cd "$(dirname "$0")/.." && pwd)"
 JAILBREAK_DIR="$REPODIR/jailbreak"
+DEFAULT_WIFI_PASS="12345678"
 
 if [ ! -f "$JAILBREAK_DIR/run_jailbreak.py" ]; then
     echo "Jailbreak files not found: $JAILBREAK_DIR"
@@ -25,10 +28,154 @@ if ! command -v python3 >/dev/null 2>&1; then
     exit 1
 fi
 
+if ! command -v nmcli >/dev/null 2>&1; then
+    echo "nmcli (NetworkManager) is required for WiFi connection."
+    echo "Install it: sudo apt install network-manager"
+    exit 1
+fi
+
+connect_asiair_wifi() {
+    echo "Scanning for ASIAIR WiFi networks..."
+    nmcli device wifi rescan 2>/dev/null || true
+    sleep 2
+
+    local networks
+    networks=$(nmcli -t -f SSID device wifi list 2>/dev/null | grep -i '^ASIAIR_' | sort -u)
+
+    if [ -z "$networks" ]; then
+        echo "No ASIAIR WiFi networks found."
+        echo "Make sure the ASIAIR is powered on and broadcasting WiFi."
+        echo ""
+        echo "If you're already connected, pass the IP directly:"
+        echo "  scripts/jailbreak <ASIAIR_IP>"
+        return 1
+    fi
+
+    local ssid_count
+    ssid_count=$(echo "$networks" | wc -l)
+
+    local ssid
+    if [ "$ssid_count" -eq 1 ]; then
+        ssid="$networks"
+        echo "Found ASIAIR network: $ssid"
+    else
+        echo "Multiple ASIAIR networks found:"
+        local i=1
+        while IFS= read -r net; do
+            echo "  [$i] $net"
+            i=$((i + 1))
+        done <<< "$networks"
+        read -rp "Select network number: " choice
+        ssid=$(echo "$networks" | sed -n "${choice}p")
+        if [ -z "$ssid" ]; then
+            echo "Invalid selection."
+            return 1
+        fi
+    fi
+
+    echo ""
+    echo "Connecting to $ssid..."
+
+    local prev_connection
+    prev_connection=$(nmcli -t -f NAME connection show --active 2>/dev/null \
+        | grep -v "$ssid" | head -1)
+
+    # Remove any stale connection profile so nmcli uses the fresh password
+    nmcli connection delete "$ssid" 2>/dev/null || true
+
+    nmcli device wifi connect "$ssid" password "$DEFAULT_WIFI_PASS" 2>/dev/null && {
+        echo "Connected to $ssid (default password)."
+        CONNECTED_SSID="$ssid"
+        PREV_CONNECTION="$prev_connection"
+        return 0
+    }
+
+    echo "Default password failed."
+    # Clean up the failed profile before retrying
+    nmcli connection delete "$ssid" 2>/dev/null || true
+    read -rsp "Enter WiFi password for $ssid: " user_pass
+    echo ""
+
+    nmcli device wifi connect "$ssid" password "$user_pass" 2>/dev/null && {
+        echo "Connected to $ssid."
+        CONNECTED_SSID="$ssid"
+        PREV_CONNECTION="$prev_connection"
+        return 0
+    }
+
+    echo "Failed to connect to $ssid."
+    return 1
+}
+
+get_asiair_ip() {
+    # Find the WiFi interface that's connected to the ASIAIR
+    local wifi_dev
+    wifi_dev=$(nmcli -t -f DEVICE,TYPE,STATE device status 2>/dev/null \
+        | grep ':wifi:connected' | head -1 | cut -d: -f1)
+
+    if [ -n "$wifi_dev" ]; then
+        local gw
+        gw=$(nmcli -t -f IP4.GATEWAY device show "$wifi_dev" 2>/dev/null \
+            | grep -v '^$' | head -1 | cut -d: -f2)
+        if [ -n "$gw" ] && [ "$gw" != "--" ] && [ -n "$gw" ]; then
+            echo "$gw"
+            return 0
+        fi
+    fi
+
+    # Fallback: check common ASIAIR gateway IPs
+    for ip in 10.0.0.1 192.168.4.1 192.168.1.1; do
+        if ping -c1 -W1 "$ip" >/dev/null 2>&1; then
+            echo "$ip"
+            return 0
+        fi
+    done
+
+    return 1
+}
+
+disconnect_asiair_wifi() {
+    if [ -n "$CONNECTED_SSID" ]; then
+        echo ""
+        echo "Disconnecting from $CONNECTED_SSID..."
+        nmcli connection down "$CONNECTED_SSID" 2>/dev/null || true
+        nmcli connection delete "$CONNECTED_SSID" 2>/dev/null || true
+        if [ -n "$PREV_CONNECTION" ]; then
+            echo "Reconnecting to $PREV_CONNECTION..."
+            nmcli connection up "$PREV_CONNECTION" 2>/dev/null || true
+        fi
+    fi
+}
+
+CONNECTED_SSID=""
+PREV_CONNECTION=""
+
 echo "=== ASIAIR Jailbreak ==="
 echo ""
 echo "This will enable SSH on your ASIAIR via the OTA update mechanism."
-echo "Your ASIAIR must be powered on and connected to the same network."
 echo ""
 
-python3 "$JAILBREAK_DIR/run_jailbreak.py" "$@"
+CONFIRMED_FLAG=""
+
+if [ -n "${1:-}" ] && [ "$1" != "--scan" ]; then
+    ASIAIR_IP="$1"
+    echo "Using provided IP: $ASIAIR_IP"
+else
+    connect_asiair_wifi || exit 1
+    trap disconnect_asiair_wifi EXIT
+    CONFIRMED_FLAG="--confirmed"
+
+    echo ""
+    echo "Detecting ASIAIR IP address..."
+    sleep 2
+
+    ASIAIR_IP=$(get_asiair_ip) || {
+        echo "Could not determine ASIAIR IP address."
+        echo "Try passing it manually: scripts/jailbreak <IP>"
+        exit 1
+    }
+    echo "ASIAIR IP: $ASIAIR_IP"
+fi
+
+echo ""
+python3 "$JAILBREAK_DIR/run_jailbreak.py" $CONFIRMED_FLAG "$ASIAIR_IP"
