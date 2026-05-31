@@ -10,9 +10,11 @@ set -e
 #   sudo scripts/install              # full: jailbreak + backup + download + flash
 #   sudo scripts/install --flash-only # skip jailbreak/backup (already have a backup)
 #   sudo scripts/install --rebackup   # force a fresh backup even if one exists
+#   sudo scripts/install --no-wifi    # skip the WiFi hotspot prompt (headless)
 #
 # An existing stock backup is never overwritten unless --rebackup is given, so
 # re-running after flashing can't destroy your only path back to stock.
+# The WiFi prompt can also be skipped non-interactively with OPENASTRO_WIFI=no.
 
 REPODIR="$(cd "$(dirname "$0")/.." && pwd)"
 TOOL="$REPODIR/rk-flashtool"
@@ -29,6 +31,7 @@ while [ $# -gt 0 ]; do
     case "$1" in
         --flash-only) FLASH_ONLY=true; shift ;;
         --rebackup)   REBACKUP=true; shift ;;
+        --no-wifi)    export OPENASTRO_WIFI=no; shift ;;
         *) break ;;
     esac
 done
@@ -48,20 +51,6 @@ prompt_continue() {
 prompt_wait() {
     echo ""
     read -rp "$1 [Press Enter when ready] " _
-}
-
-# Echo a writable directory with at least ~4.5 GB free for the decompressed
-# rootfs image. /tmp is often a small RAM-backed tmpfs, so prefer the image's
-# own directory (on real disk) and fall back to /var/tmp. Returns 1 if none fit.
-pick_workdir() {
-    local need_kb=4718592   # ~4.5 GB
-    local d avail
-    for d in "${TMPDIR:-}" "$(dirname "$1")" /var/tmp /tmp; do
-        [ -n "$d" ] && [ -d "$d" ] && [ -w "$d" ] || continue
-        avail=$(df -Pk "$d" 2>/dev/null | awk 'NR==2{print $4}')
-        if [ "${avail:-0}" -ge "$need_kb" ]; then echo "$d"; return 0; fi
-    done
-    return 1
 }
 
 # --- Preflight ---

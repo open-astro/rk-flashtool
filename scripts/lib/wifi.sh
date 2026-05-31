@@ -20,6 +20,21 @@
 # Directory of this library, used to locate the vendored .debs.
 _WIFI_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# Echo a writable directory with at least ~4.5 GB free for the decompressed
+# rootfs image. /tmp is often a small RAM-backed tmpfs, so prefer the image's
+# own directory (on real disk) and fall back to /var/tmp. Returns 1 if none fit.
+# (Lives here because both install and flash-rootfs source this file.)
+pick_workdir() {
+    local need_kb=4718592   # ~4.5 GB
+    local d avail
+    for d in "${TMPDIR:-}" "$(dirname "$1")" /var/tmp /tmp; do
+        [ -n "$d" ] && [ -d "$d" ] && [ -w "$d" ] || continue
+        avail=$(df -Pk "$d" 2>/dev/null | awk 'NR==2{print $4}')
+        if [ "${avail:-0}" -ge "$need_kb" ]; then echo "$d"; return 0; fi
+    done
+    return 1
+}
+
 # Write a NetworkManager AP-mode keyfile connection into the mounted rootfs.
 # Args: <rootfs-mountpoint> <ssid> <psk> <country>
 _wifi_write_profile() {
@@ -119,6 +134,15 @@ _wifi_ensure_dnsmasq() {
 configure_wifi_in_image() {
     local image="$1"
 
+    # Non-interactive escape for scripted/headless use:
+    #   OPENASTRO_WIFI=no  (or 0/false)  skips hotspot setup without prompting.
+    case "${OPENASTRO_WIFI:-}" in
+        no|NO|No|0|false|FALSE)
+            echo "Skipping WiFi hotspot setup (OPENASTRO_WIFI=$OPENASTRO_WIFI)."
+            return 0
+            ;;
+    esac
+
     echo ""
     echo "========================================"
     echo "  WiFi hotspot setup"
@@ -145,10 +169,17 @@ configure_wifi_in_image() {
         return 1
     fi
 
+    # Reject control characters (incl. a stray CR from CRLF input): they would
+    # silently corrupt the NetworkManager keyfile, which is line-oriented INI.
     local ssid=""
     while [ -z "$ssid" ]; do
         read -rp "  Hotspot name (SSID) to broadcast: " ssid
-        [ -z "$ssid" ] && echo "  SSID cannot be empty."
+        if [ -z "$ssid" ]; then
+            echo "  SSID cannot be empty."
+        elif [[ "$ssid" == *[[:cntrl:]]* ]]; then
+            echo "  SSID contains invalid (control) characters."
+            ssid=""
+        fi
     done
 
     local psk="" psk2=""
@@ -156,6 +187,9 @@ configure_wifi_in_image() {
         read -rsp "  Hotspot password: " psk; echo ""
         if [ ${#psk} -lt 8 ]; then
             echo "  WPA passwords must be at least 8 characters."
+            continue
+        elif [[ "$psk" == *[[:cntrl:]]* ]]; then
+            echo "  Password contains invalid (control) characters."
             continue
         fi
         read -rsp "  Confirm password: " psk2; echo ""
@@ -175,18 +209,41 @@ configure_wifi_in_image() {
         return 1
     fi
 
-    _wifi_write_profile "$mnt" "$ssid" "$psk" "$country"
-
+    # Always unmount, even if a step below fails under 'set -e'. Using '|| rc=…'
+    # disables set -e for these calls, so we reach the umount instead of leaking
+    # the loop mount. (A bare EXIT trap would clobber the caller's own trap.)
+    local rc=0 dns_failed=0
+    _wifi_write_profile "$mnt" "$ssid" "$psk" "$country" || rc=1
     # AP mode is useless without dnsmasq (DHCP for clients) — inject if missing.
-    _wifi_ensure_dnsmasq "$mnt"
+    [ $rc -eq 0 ] && { _wifi_ensure_dnsmasq "$mnt" || dns_failed=1; }
 
     sync
-    umount "$mnt"
-    rmdir "$mnt"
+    umount "$mnt" 2>/dev/null
+    rmdir "$mnt" 2>/dev/null
+
+    if [ $rc -ne 0 ]; then
+        echo "ERROR: failed to write the WiFi profile into the image."
+        return 1
+    fi
+
+    # dnsmasq injection failed: the hotspot would broadcast but hand out no IPs.
+    # Let the user decide rather than silently flashing a half-working hotspot.
+    if [ $dns_failed -ne 0 ]; then
+        echo ""
+        echo "Without dnsmasq the hotspot will broadcast but clients can't get an"
+        echo "IP address, so they won't be able to connect."
+        local ans
+        read -rp "Continue flashing anyway? [y/N] " ans
+        case "$ans" in
+            [yY]*) ;;
+            *) echo "Aborted WiFi setup."; return 1 ;;
+        esac
+    fi
 
     echo ""
     echo "WiFi hotspot \"$ssid\" configured (country $country)."
-    echo "After boot, join \"$ssid\" from your device and connect to:"
-    echo "  ssh astro@10.42.0.1   (or astro@astro.local)"
+    echo "After boot, join \"$ssid\" from your device, then:"
+    echo "  ssh astro@10.42.0.1"
+    echo "(astro.local also works if your client supports mDNS/Bonjour.)"
     return 0
 }

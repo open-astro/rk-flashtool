@@ -4,7 +4,8 @@ set -e
 # Flash a rootfs image to ASIAIR Plus partition 7.
 # Accepts both raw .img and compressed .img.gz files.
 #
-# Usage: sudo scripts/flash-rootfs [rootfs-image]
+# Usage: sudo scripts/flash-rootfs [--no-wifi] [rootfs-image]
+#   --no-wifi  skip the WiFi hotspot prompt (also: OPENASTRO_WIFI=no)
 
 REPODIR="$(cd "$(dirname "$0")/.." && pwd)"
 TOOL="$REPODIR/rk-flashtool"
@@ -13,19 +14,7 @@ TOOL="$REPODIR/rk-flashtool"
 RELEASE_URL="https://github.com/open-astro/rk-flashtool/releases/download/v1.0/rootfs-stock.img.gz"
 IMAGES_DIR="$REPODIR/images"
 
-# Echo a writable directory with at least ~4.5 GB free for the decompressed
-# rootfs image. /tmp is often a small RAM-backed tmpfs, so prefer the image's
-# own directory (on real disk) and fall back to /var/tmp. Returns 1 if none fit.
-pick_workdir() {
-    local need_kb=4718592   # ~4.5 GB
-    local d avail
-    for d in "${TMPDIR:-}" "$(dirname "$1")" /var/tmp /tmp; do
-        [ -n "$d" ] && [ -d "$d" ] && [ -w "$d" ] || continue
-        avail=$(df -Pk "$d" 2>/dev/null | awk 'NR==2{print $4}')
-        if [ "${avail:-0}" -ge "$need_kb" ]; then echo "$d"; return 0; fi
-    done
-    return 1
-}
+# pick_workdir() is provided by scripts/lib/wifi.sh (sourced above).
 
 # Search order for rootfs image: arg > images/ in repo > ../asiair-image/
 find_rootfs() {
@@ -57,6 +46,16 @@ download_rootfs() {
     echo "Downloaded: $dest ($(du -h "$dest" | cut -f1))"
     echo "$dest"
 }
+
+# Pull out --no-wifi from anywhere in the args; leave the positional image arg.
+ARGS=()
+for a in "$@"; do
+    case "$a" in
+        --no-wifi) export OPENASTRO_WIFI=no ;;
+        *) ARGS+=("$a") ;;
+    esac
+done
+set -- "${ARGS[@]}"
 
 ROOTFS_ARG="${1:-$(find_rootfs)}"
 if [ -z "$ROOTFS_ARG" ]; then

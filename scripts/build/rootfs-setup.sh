@@ -92,6 +92,11 @@ chroot "$ROOTFS" /bin/bash -c "systemctl enable NetworkManager"
 # The optional WiFi hotspot (NetworkManager "ipv4 method=shared") needs the
 # dnsmasq binary to hand out DHCP leases to clients. Without it the AP radio
 # starts but clients can't get an address and activation fails.
+# NOTE: this apt-get runs inside the chroot and therefore needs outbound network
+# at build time. (The installer's runtime path injects the same dependency
+# offline via vendored .debs — see scripts/lib/wifi.sh — so flashing needs no
+# network.) Normally dnsmasq-base is already present from the debootstrap
+# --include list, so this branch is just a safety net.
 if [ ! -x "$ROOTFS/usr/sbin/dnsmasq" ]; then
     echo "Installing dnsmasq-base (required for the WiFi hotspot)..."
     chroot "$ROOTFS" /bin/bash -c "DEBIAN_FRONTEND=noninteractive apt-get install -y dnsmasq-base" \
