@@ -52,8 +52,9 @@ The installer handles everything automatically:
 1. **Jailbreaks** your ASIAIR to enable SSH (over the network, no physical access)
 2. **Backs up** all partitions over SSH (~7.7 GB) — your only way back to stock
 3. **Downloads** the OpenAstro Linux image from GitHub Releases
-4. **Pauses** and asks you to enter Loader mode (hold the reset button while powering on)
-5. **Flashes** the stock boot chain from your backup + OpenAstro Linux rootfs
+4. **Offers a WiFi hotspot** — set an SSID/password and the unit broadcasts its own network (like the stock ASIAIR); join it and reach the unit at `astro@10.42.0.1`. Skip to connect over the wired Ethernet port
+5. **Pauses** and asks you to enter Loader mode (hold the reset button while powering on)
+6. **Flashes** the stock boot chain from your backup + OpenAstro Linux rootfs
 
 Total time: ~15 minutes (mostly waiting for the backup transfer).
 
@@ -71,7 +72,7 @@ ssh astro@astro.local
 | User | `astro` |
 | Password | `astro` |
 | SSH | Enabled |
-| WiFi | Configure via `nmcli` |
+| WiFi | Optional hotspot set during install (reach unit at `10.42.0.1`), or configure later via `nmcli` |
 
 **Change the default password immediately:** `passwd`
 
@@ -104,7 +105,7 @@ If you'd prefer to build a custom rootfs instead of using the pre-built image:
 sudo apt install debootstrap qemu-user-static
 
 sudo debootstrap --arch=arm64 \
-  --include=systemd,systemd-sysv,openssh-server,network-manager,sudo,\
+  --include=systemd,systemd-sysv,openssh-server,network-manager,dnsmasq-base,sudo,\
 vim-tiny,less,locales,dbus,iproute2,iputils-ping,wget,curl,\
 ca-certificates,usbutils,pciutils,kmod \
   trixie ../asiair-rootfs http://deb.debian.org/debian

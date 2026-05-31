@@ -88,6 +88,16 @@ EOF
 # --- NetworkManager ---
 chroot "$ROOTFS" /bin/bash -c "systemctl enable NetworkManager"
 
+# --- WiFi hotspot dependency ---
+# The optional WiFi hotspot (NetworkManager "ipv4 method=shared") needs the
+# dnsmasq binary to hand out DHCP leases to clients. Without it the AP radio
+# starts but clients can't get an address and activation fails.
+if [ ! -x "$ROOTFS/usr/sbin/dnsmasq" ]; then
+    echo "Installing dnsmasq-base (required for the WiFi hotspot)..."
+    chroot "$ROOTFS" /bin/bash -c "DEBIAN_FRONTEND=noninteractive apt-get install -y dnsmasq-base" \
+        || echo "WARNING: could not install dnsmasq-base — the WiFi hotspot will not hand out IPs."
+fi
+
 # --- Install stock kernel modules (4.19.219) ---
 echo "Installing stock kernel modules..."
 rm -rf "$ROOTFS/lib/modules/"*
