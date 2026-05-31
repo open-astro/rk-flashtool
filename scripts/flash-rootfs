@@ -4,12 +4,17 @@ set -e
 # Flash a rootfs image to ASIAIR Plus partition 7.
 # Accepts both raw .img and compressed .img.gz files.
 #
-# Usage: sudo scripts/flash-rootfs [rootfs-image]
+# Usage: sudo scripts/flash-rootfs [--no-wifi] [rootfs-image]
+#   --no-wifi  skip the WiFi hotspot prompt (also: OPENASTRO_WIFI=no)
 
 REPODIR="$(cd "$(dirname "$0")/.." && pwd)"
 TOOL="$REPODIR/rk-flashtool"
-RELEASE_URL="https://github.com/open-astro/rk-flashtool/releases/download/v1.0/astrolinux-trixie-rk3568.img.gz"
+# shellcheck source=lib/wifi.sh
+. "$REPODIR/scripts/lib/wifi.sh"
+RELEASE_URL="https://github.com/open-astro/rk-flashtool/releases/download/v1.0/rootfs-stock.img.gz"
 IMAGES_DIR="$REPODIR/images"
+
+# pick_workdir() is provided by scripts/lib/wifi.sh (sourced above).
 
 # Search order for rootfs image: arg > images/ in repo > ../asiair-image/
 find_rootfs() {
@@ -28,9 +33,9 @@ download_rootfs() {
     echo "  $RELEASE_URL"
     echo ""
     if command -v wget >/dev/null 2>&1; then
-        wget -O "$dest" "$RELEASE_URL"
+        wget -O "$dest" "$RELEASE_URL" || { rm -f "$dest"; echo "Download failed." >&2; exit 1; }
     elif command -v curl >/dev/null 2>&1; then
-        curl -L -o "$dest" "$RELEASE_URL"
+        curl -fL -o "$dest" "$RELEASE_URL" || { rm -f "$dest"; echo "Download failed." >&2; exit 1; }
     else
         echo "ERROR: wget or curl required. Download manually:"
         echo "  mkdir -p images"
@@ -41,6 +46,16 @@ download_rootfs() {
     echo "Downloaded: $dest ($(du -h "$dest" | cut -f1))"
     echo "$dest"
 }
+
+# Pull out --no-wifi from anywhere in the args; leave the positional image arg.
+ARGS=()
+for a in "$@"; do
+    case "$a" in
+        --no-wifi) export OPENASTRO_WIFI=no ;;
+        *) ARGS+=("$a") ;;
+    esac
+done
+set -- "${ARGS[@]}"
 
 ROOTFS_ARG="${1:-$(find_rootfs)}"
 if [ -z "$ROOTFS_ARG" ]; then
@@ -66,14 +81,28 @@ fi
 
 # Decompress .gz images to a temp file
 if [[ "$ROOTFS_IMG" == *.gz ]]; then
-    echo "Decompressing $(basename "$ROOTFS_IMG")..."
-    TMPIMG="$(mktemp /tmp/astrolinux-rootfs-XXXXXX.img)"
+    WORKDIR="$(pick_workdir "$ROOTFS_IMG")" || {
+        echo "ERROR: need ~4.5 GB of free space to decompress the image, but"
+        echo "none of TMPDIR, the image directory, /var/tmp, or /tmp has enough."
+        echo "Free up space or set TMPDIR to a larger filesystem, then retry."
+        exit 1
+    }
+    echo "Decompressing $(basename "$ROOTFS_IMG") into $WORKDIR..."
+    TMPIMG="$(mktemp "$WORKDIR/astrolinux-rootfs-XXXXXX.img")"
     trap 'rm -f "$TMPIMG"' EXIT
-    gunzip -c "$ROOTFS_IMG" > "$TMPIMG"
+    gunzip -c "$ROOTFS_IMG" > "$TMPIMG" || {
+        echo "ERROR: decompression failed (out of space?)."
+        exit 1
+    }
     ROOTFS_IMG="$TMPIMG"
     echo "Done ($(du -h "$ROOTFS_IMG" | cut -f1))."
     echo ""
 fi
+
+configure_wifi_in_image "$ROOTFS_IMG" || {
+    echo "WiFi setup failed; aborting before flash."
+    exit 1
+}
 
 $TOOL ld 2>/dev/null | grep -q "Loader\|Maskrom" || {
     echo "No ASIAIR found in Loader or Maskrom mode."

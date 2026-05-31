@@ -7,6 +7,48 @@ All notable changes to OpenAstro Linux (rk-flashtool) will be documented in this
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- **Installer no longer destroys an existing stock backup** (`scripts/install`)
+  - Re-running the installer after flashing would re-run the backup against a
+    non-stock device and overwrite the original backup (which `restore-stock`
+    then preferred, being the most recent file) — destroying the only path back
+    to stock. The backup step now detects an existing valid backup and skips it;
+    pass `--rebackup` to force a fresh one.
+  - Backups now stream to a `.partial` temp file and are moved into place only on
+    success, so a failed transfer can no longer truncate an existing backup.
+- **Corrected the release image URL** (`scripts/install`, `scripts/flash-rootfs`)
+  - Pointed at the actual `rootfs-stock.img.gz` asset (was a 404). Failed/partial
+    downloads are now cleaned up instead of being left to poison the next run.
+- **Decompress the image onto a filesystem with room** (`scripts/install`, `scripts/flash-rootfs`)
+  - The rootfs decompresses to ~4 GB, but `/tmp` is often a small RAM-backed
+    tmpfs, causing "No space left on device". The temp now goes to a directory
+    with enough free space (TMPDIR, the image dir, or /var/tmp), with an
+    up-front space check and a clear error instead of a cryptic gzip failure.
+
+### Added
+- **Optional WiFi hotspot setup during install** (`scripts/install`, `scripts/flash-rootfs`)
+  - The installer asks whether to set up the built-in WiFi as a hotspot before
+    flashing. If you opt in, it prompts for a hotspot SSID/password (and country
+    code) and bakes a NetworkManager AP-mode profile into the image.
+  - The unit broadcasts its own WiFi network (like the stock ASIAIR) that you
+    join from a phone/laptop and reach at `astro@10.42.0.1` — it does not join an
+    existing router. Skip it to connect over the wired Ethernet port instead.
+  - Shared logic lives in `scripts/lib/wifi.sh`.
+- **Installer injects `dnsmasq` into the image** (`scripts/lib/wifi.sh`, `blobs/debs/`)
+  - NetworkManager's hotspot mode (`ipv4 method=shared`) needs the dnsmasq binary
+    to hand out DHCP leases; without it the AP radio starts but clients never get
+    an IP. When configuring the hotspot, the installer now checks the mounted
+    rootfs and, if dnsmasq is absent, extracts the vendored `dnsmasq-base`,
+    `libnetfilter-conntrack3`, and `libnfnetlink0` arm64 `.debs` (the full
+    runtime dependency closure) straight into the image with `dpkg-deb -x`
+    (offline, no chroot — the build host is the same arch as the target).
+    **No image rebuild is required.**
+  - `dnsmasq-base` was also added to the from-scratch build
+    (`scripts/build/rootfs-setup.sh`, debootstrap include list) so freshly built
+    images already contain it.
+
 ## [1.0.0] - 2026-04-26
 
 ### Added

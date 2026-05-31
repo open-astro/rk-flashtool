@@ -9,19 +9,32 @@ set -e
 # Usage:
 #   sudo scripts/install              # full: jailbreak + backup + download + flash
 #   sudo scripts/install --flash-only # skip jailbreak/backup (already have a backup)
+#   sudo scripts/install --rebackup   # force a fresh backup even if one exists
+#   sudo scripts/install --no-wifi    # skip the WiFi hotspot prompt (headless)
+#
+# An existing stock backup is never overwritten unless --rebackup is given, so
+# re-running after flashing can't destroy your only path back to stock.
+# The WiFi prompt can also be skipped non-interactively with OPENASTRO_WIFI=no.
 
 REPODIR="$(cd "$(dirname "$0")/.." && pwd)"
 TOOL="$REPODIR/rk-flashtool"
+# shellcheck source=lib/wifi.sh
+. "$REPODIR/scripts/lib/wifi.sh"
 BACKUP_DIR="$REPODIR/asiair-backup"
 JAILBREAK_DIR="$REPODIR/jailbreak"
 IMAGES_DIR="$REPODIR/images"
-RELEASE_URL="https://github.com/open-astro/rk-flashtool/releases/download/v1.0/astrolinux-trixie-rk3568.img.gz"
+RELEASE_URL="https://github.com/open-astro/rk-flashtool/releases/download/v1.0/rootfs-stock.img.gz"
 CLEANUP_TMP=""
 FLASH_ONLY=false
-if [ "${1:-}" = "--flash-only" ]; then
-    FLASH_ONLY=true
-    shift
-fi
+REBACKUP=false
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --flash-only) FLASH_ONLY=true; shift ;;
+        --rebackup)   REBACKUP=true; shift ;;
+        --no-wifi)    export OPENASTRO_WIFI=no; shift ;;
+        *) break ;;
+    esac
+done
 
 trap 'rm -f "$CLEANUP_TMP"' EXIT
 
@@ -155,6 +168,28 @@ else
 
     mkdir -p "$BACKUP_DIR"
 
+    # Protect an existing stock backup. Once OpenAstro Linux has been flashed,
+    # the device is no longer stock — re-backing up here would capture the
+    # modified rootfs and (because restore-stock picks the most recent file)
+    # shadow the only good stock backup. Skip unless --rebackup is given.
+    EXISTING_BACKUP="$(ls -1t "$BACKUP_DIR"/*_p7_rootfs.bin 2>/dev/null | head -1)"
+    EXISTING_SIZE=0
+    [ -n "$EXISTING_BACKUP" ] && EXISTING_SIZE="$(stat -c%s "$EXISTING_BACKUP" 2>/dev/null || echo 0)"
+
+    if [ "$EXISTING_SIZE" -ge 1000000000 ] && ! $REBACKUP; then
+        echo "An existing stock backup was found:"
+        echo "  $EXISTING_BACKUP ($(du -h "$EXISTING_BACKUP" | cut -f1))"
+        echo ""
+        echo "Skipping backup to protect it. The device may no longer be stock,"
+        echo "and re-running the backup could overwrite your only way back to"
+        echo "stock firmware."
+        echo ""
+        echo "To force a fresh backup anyway, re-run with: --rebackup"
+        DO_BACKUP=false
+    else
+        DO_BACKUP=true
+    fi
+
     ok_count=0
     fail_count=0
 
@@ -162,19 +197,25 @@ else
         local desc="$1"
         local remote_cmd="$2"
         local local_file="$BACKUP_DIR/${DATE}_${3}"
+        local tmp_file="${local_file}.partial"
 
         echo "  $desc..."
-        if $SSH_CMD "$REMOTE" "echo $PASS | sudo -S $remote_cmd" > "$local_file" 2>/dev/null; then
+        # Write to a temp file first so a failed transfer can never truncate an
+        # existing good backup; only move into place once the dd succeeds.
+        if $SSH_CMD "$REMOTE" "echo $PASS | sudo -S $remote_cmd" > "$tmp_file" 2>/dev/null; then
+            mv -f "$tmp_file" "$local_file"
             local size
             size=$(du -h "$local_file" | cut -f1)
             echo "    $size — OK"
             ok_count=$((ok_count + 1))
         else
+            rm -f "$tmp_file"
             echo "    FAILED"
             fail_count=$((fail_count + 1))
         fi
     }
 
+    if $DO_BACKUP; then
     pull_backup "Bootloader (sectors 0-16383)" \
         "dd if=$DEVICE bs=512 count=16384 2>/dev/null" \
         "bootloader_pre_partition.bin"
@@ -214,6 +255,7 @@ else
         TOTAL=$(du -sh "$BACKUP_DIR" | cut -f1)
         echo "Backup complete ($TOTAL). Saved to: $BACKUP_DIR"
     fi
+    fi
 fi
 
 # ============================================================
@@ -252,9 +294,9 @@ if [ -z "$ROOTFS_IMG" ]; then
     mkdir -p "$IMAGES_DIR"
     local_dest="$IMAGES_DIR/astrolinux-trixie-rk3568.img.gz"
     if command -v wget >/dev/null 2>&1; then
-        wget -O "$local_dest" "$RELEASE_URL"
+        wget -O "$local_dest" "$RELEASE_URL" || { rm -f "$local_dest"; echo "Download failed."; exit 1; }
     elif command -v curl >/dev/null 2>&1; then
-        curl -L -o "$local_dest" "$RELEASE_URL"
+        curl -fL -o "$local_dest" "$RELEASE_URL" || { rm -f "$local_dest"; echo "Download failed."; exit 1; }
     else
         echo "ERROR: wget or curl required."
         exit 1
@@ -268,13 +310,31 @@ fi
 
 # Decompress if needed
 if [[ "$ROOTFS_IMG" == *.gz ]]; then
-    echo "Decompressing $(basename "$ROOTFS_IMG")..."
-    TMPIMG="$(mktemp /tmp/astrolinux-rootfs-XXXXXX.img)"
+    WORKDIR="$(pick_workdir "$ROOTFS_IMG")" || {
+        echo "ERROR: need ~4.5 GB of free space to decompress the image, but"
+        echo "none of TMPDIR, the image directory, /var/tmp, or /tmp has enough."
+        echo "Free up space or set TMPDIR to a larger filesystem, then retry."
+        exit 1
+    }
+    echo "Decompressing $(basename "$ROOTFS_IMG") into $WORKDIR..."
+    TMPIMG="$(mktemp "$WORKDIR/astrolinux-rootfs-XXXXXX.img")"
     CLEANUP_TMP="$TMPIMG"
-    gunzip -c "$ROOTFS_IMG" > "$TMPIMG"
+    gunzip -c "$ROOTFS_IMG" > "$TMPIMG" || {
+        echo "ERROR: decompression failed (out of space?)."
+        exit 1
+    }
     ROOTFS_IMG="$TMPIMG"
     echo "Done ($(du -h "$ROOTFS_IMG" | cut -f1))."
 fi
+
+# ============================================================
+# Optional: configure WiFi in the image before flashing
+# ============================================================
+
+configure_wifi_in_image "$ROOTFS_IMG" || {
+    echo "WiFi setup failed; aborting before flash."
+    exit 1
+}
 
 # ============================================================
 # Step 4: Flash rootfs only
