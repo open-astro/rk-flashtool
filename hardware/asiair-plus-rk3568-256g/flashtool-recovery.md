@@ -1,4 +1,4 @@
-# ASIAIR Plus RK3568 — rk-flashtool Recovery Guide
+# ASIAIR Plus RK3568 - rk-flashtool Recovery Guide
 
 ## Device Identity
 
@@ -34,7 +34,7 @@ power-up. If it does NOT (device not visible on `lsusb`), force Maskrom by
 shorting the eMMC data lines:
 
 1. Remove the ASIAIR Plus enclosure (4 corner screws)
-2. Locate the **eMMC chip** — small BGA chip with QR code label, to the right
+2. Locate the **eMMC chip** - small BGA chip with QR code label, to the right
    of the RK3568B2 SoC (board marking: ASI AIR PLUS V2.3)
 3. With the device **unpowered** (no USB, no 12V), connect the USB-C cable to the PC
 4. Run the USB watch loop on the PC:
@@ -42,7 +42,7 @@ shorting the eMMC data lines:
    while true; do lsusb 2>/dev/null | grep 2207 && echo "FOUND" && break; sleep 0.1; done
    ```
 5. Lay a **paper clip or conductive wire across the top of the eMMC chip** to short
-   the data lines — this prevents the BootROM from reading eMMC
+   the data lines - this prevents the BootROM from reading eMMC
 6. While holding the short, **plug in 12V power and turn on**
 7. When "FOUND" appears in the terminal, **remove the paper clip immediately**
 8. The device should now show as Maskrom in `sudo ./rk-flashtool ld`
@@ -50,7 +50,7 @@ shorting the eMMC data lines:
 **GND reference:** Capacitor **C3816** on the PCB, or any of the brass mounting
 standoffs in the corners.
 
-**Important:** Remove the short before running any flash commands — the eMMC must
+**Important:** Remove the short before running any flash commands - the eMMC must
 be accessible for writes to succeed.
 
 ## Device Capabilities (Loader Mode)
@@ -106,7 +106,7 @@ sudo ./rk-flashtool rcb
 sudo ./rk-flashtool rl 0x4000 0x2000 uboot-dump.img
 ```
 
-### Write (DESTRUCTIVE — use with care)
+### Write (DESTRUCTIVE - use with care)
 
 ```bash
 # Write sectors from file (e.g., restore uboot partition)
@@ -157,14 +157,14 @@ sudo ./rk-flashtool rd
 - The rootfs image (p7) is 7 GB. USB writes of files this large may time out.
   If the rootfs was never modified (e.g., only the bootloader was changed), it
   does not need to be restored.
-- p5 (asiair) is 222 GB — only the first 64 MB header was backed up. The full
+- p5 (asiair) is 222 GB - only the first 64 MB header was backed up. The full
   partition contains ASIAIR capture data (FITS files, darks, etc.) and is too
   large for a sector-level backup. The VFAT filesystem header is enough to make
   it mountable; user data must be restored separately.
 - p8 (swap) can be recreated if no backup exists: boot into Linux and run
   `mkswap /dev/mmcblk0p8`. The stock fstab enables it automatically.
 
-## Maskrom Recovery (Bricked Bootloader) — TESTED 2026-04-24, 2026-04-25
+## Maskrom Recovery (Bricked Bootloader) - TESTED 2026-04-24, 2026-04-25
 
 If the bootloader is corrupted, the device may enter Maskrom mode automatically
 on power-up. If it does not (SYS LED blinks 5 times then powers off, device not
@@ -197,7 +197,7 @@ sudo ./rk-flashtool db ../rkbin/rk356x_spl_loader_v1.23.114.bin
 #   - Unplug USB + 12V, wait 30 seconds
 #   - If device doesn't appear in Maskrom after power-on, use the eMMC
 #     short method (see "Entering Maskrom Mode" above)
-#   - Run `db` immediately after the device appears — don't run `ld` first
+#   - Run `db` immediately after the device appears - don't run `ld` first
 
 # 3. Wait 2 seconds for the loader to initialize
 sleep 2
@@ -215,10 +215,10 @@ sudo ./rk-flashtool wl 0x8000  asiair-backup/20260423_p3_boot.bin
 sudo ./rk-flashtool wl 0x28000 asiair-backup/20260423_p4_recovery.bin
 sudo ./rk-flashtool wl 0x38000 asiair-backup/20260423_p5_asiair_header.bin  # first 64 MB only
 
-# 7. (Optional) Restore pi, rootfs, swap — only if they were modified
+# 7. (Optional) Restore pi, rootfs, swap - only if they were modified
 # sudo ./rk-flashtool wl 0x1BC38000 asiair-backup/20260423_p6_pi.bin
-# sudo ./rk-flashtool wl 0x1BD38000 asiair-backup/20260423_p7_rootfs.bin  # 7 GB — may time out
-# p8 (swap) — no backup, recreate with: mkswap /dev/mmcblk0p8
+# sudo ./rk-flashtool wl 0x1BD38000 asiair-backup/20260423_p7_rootfs.bin  # 7 GB - may time out
+# p8 (swap) - no backup, recreate with: mkswap /dev/mmcblk0p8
 
 # 8. Reset device
 sudo ./rk-flashtool rd
@@ -233,7 +233,7 @@ If the device does not appear on `lsusb` at all (no Rockchip 2207 device):
 
 1. The ASIAIR power management MCU may be shutting down the SoC before USB
    enumerates. Symptom: SYS LED blinks 5 times, then device powers off.
-2. The BootROM in the RK3568 SoC **cannot be bricked** — it is mask ROM in silicon.
+2. The BootROM in the RK3568 SoC **cannot be bricked** - it is mask ROM in silicon.
    If the SoC has power and USB, it will always enumerate in Maskrom when it
    cannot find a valid bootloader on eMMC.
 3. If the MCU is killing power too quickly, the only solution is to **force Maskrom
@@ -249,10 +249,10 @@ The `db` command uploads a loader to RAM via USB vendor requests (0x471/0x472).
 It can fail with LIBUSB_ERROR_PIPE (-9) or LIBUSB_ERROR_TIMEOUT (-7) if the
 USB control endpoint is stalled from prior failed attempts.
 
-1. **Full power cycle** — unplug USB + 12V, wait 30 seconds, reconnect
-2. **USB reset** — `sudo usbreset /dev/bus/usb/XXX/YYY` (get path from `lsusb`)
-3. **Fresh Maskrom entry** — use the eMMC short method for a clean Maskrom state
-4. **Run `db` as the first command** — don't run `ld` or other commands first,
+1. **Full power cycle** - unplug USB + 12V, wait 30 seconds, reconnect
+2. **USB reset** - `sudo usbreset /dev/bus/usb/XXX/YYY` (get path from `lsusb`)
+3. **Fresh Maskrom entry** - use the eMMC short method for a clean Maskrom state
+4. **Run `db` as the first command** - don't run `ld` or other commands first,
    as they can leave the USB endpoint in a bad state
 5. rk-flashtool has built-in retry logic (3 attempts with USB reset between each)
 
@@ -266,7 +266,7 @@ bootloader. The rootfs, pi, asiair, and other partitions were untouched.
 
 **2026-04-25:** Debian image (new GPT + mainline U-Boot + mainline kernel + Debian
 rootfs) was flashed via `asiair-flash.sh`. Device booted but kernel failed to
-start — SYS LED blinked 5 times and MCU powered off the device. After power-off,
+start - SYS LED blinked 5 times and MCU powered off the device. After power-off,
 the device would not enter Maskrom on its own (MCU killed power before USB could
 enumerate). The `db` command also failed repeatedly with PIPE errors. Recovery
 required opening the case and **shorting the eMMC data lines with a paper clip**

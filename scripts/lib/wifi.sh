@@ -3,7 +3,7 @@
 # in a rootfs image before it is flashed.
 #
 # The unit broadcasts its own WiFi network that you join from a phone/laptop to
-# reach it directly (like the stock ASIAIR hotspot) — it does NOT join an
+# reach it directly (like the stock ASIAIR hotspot) - it does NOT join an
 # existing router. This is the useful mode in the field where there is no other
 # network. Clients get an IP via DHCP and the unit answers at 10.42.0.1.
 #
@@ -86,7 +86,7 @@ EOF
 }
 
 # Ensure the dnsmasq binary exists in the mounted rootfs (AP DHCP needs it). If
-# missing, extract the vendored .debs straight into the image — the build host
+# missing, extract the vendored .debs straight into the image - the build host
 # is the same arch as the target (arm64), so this is just an offline file unpack
 # (no chroot/qemu). Returns 1 if it could not be provided.
 _wifi_ensure_dnsmasq() {
@@ -96,7 +96,7 @@ _wifi_ensure_dnsmasq() {
     fi
 
     # dnsmasq-base needs libnetfilter-conntrack3, which in turn needs
-    # libnfnetlink0 — all three must be present or dnsmasq won't load.
+    # libnfnetlink0 - all three must be present or dnsmasq won't load.
     local debs_dir="$_WIFI_LIB_DIR/../../blobs/debs"
     local debs=(
         "$debs_dir"/dnsmasq-base_*.deb
@@ -159,7 +159,7 @@ configure_wifi_in_image() {
     case "$use_wifi" in
         [yY]*) ;;
         *)
-            echo "Leaving WiFi off — use the wired Ethernet port to connect."
+            echo "Leaving WiFi off - use the wired Ethernet port to connect."
             return 0
             ;;
     esac
@@ -194,7 +194,7 @@ configure_wifi_in_image() {
         fi
         read -rsp "  Confirm password: " psk2; echo ""
         [ "$psk" = "$psk2" ] && break
-        echo "  Passwords did not match — try again."
+        echo "  Passwords did not match - try again."
     done
 
     local country
@@ -214,7 +214,7 @@ configure_wifi_in_image() {
     # the loop mount. (A bare EXIT trap would clobber the caller's own trap.)
     local rc=0 dns_failed=0
     _wifi_write_profile "$mnt" "$ssid" "$psk" "$country" || rc=1
-    # AP mode is useless without dnsmasq (DHCP for clients) — inject if missing.
+    # AP mode is useless without dnsmasq (DHCP for clients) - inject if missing.
     [ $rc -eq 0 ] && { _wifi_ensure_dnsmasq "$mnt" || dns_failed=1; }
 
     sync

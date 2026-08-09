@@ -1,4 +1,4 @@
-# ASIAIR Mini RV1126 — Maskrom Recovery Guide
+# ASIAIR Mini RV1126 - Maskrom Recovery Guide
 
 ## Device Identity
 
@@ -28,7 +28,7 @@ jailbroken unit.
 | 7 | rootfs     | 0x2938000   | 7 GB     | Root filesystem                  |
 | 8 | swap grow  | 0x3738000   | 1.5 GB   | Swap                             |
 
-Pre-partition area: sectors 0–16383 (8 MB) contain GPT header + IDB bootloader.
+Pre-partition area: sectors 0-16383 (8 MB) contain GPT header + IDB bootloader.
 
 ## Maskrom Recovery
 
@@ -101,7 +101,7 @@ print(f"IDB magic: {magic:#x} ({'valid' if magic == 0x0FF0AA55 else 'INVALID'})"
 # DDR init is code 0x471 (entry type 1), usbplug is code 0x472 (entry type 2)
 entry_count = struct.unpack_from('<B', hdr, 12)[0]
 for i in range(entry_count):
-    off = 32 + i * 8  # simplified — actual struct varies by IDB version
+    off = 32 + i * 8  # simplified - actual struct varies by IDB version
     # Parse and extract based on your IDB version
 
 print("Dump raw IDB area for manual extraction:")
@@ -121,7 +121,7 @@ dd if=full_backup.img of=stock_bootloader.bin bs=512 count=16384
 
 ### Prerequisites
 
-- `full_backup.img` — full eMMC dump of a working ASIAIR Mini
+- `full_backup.img` - full eMMC dump of a working ASIAIR Mini
 - `rv1126_usbplug_v1.24.bin` from rkbin (`bin/rv11/rv1126_usbplug_v1.24.bin`)
 - Stock DDR init extracted from backup (see above)
 - rk-flashtool built with RV1126 support (PID 0x110B)
@@ -145,7 +145,7 @@ dd if=full_backup.img of=stock_bootloader.bin bs=512 count=16384
 ./rk-flashtool db rv1126_spl_loader_stock.bin
 
 #    Option B: Use rkbin's generic loader (WILL FAIL on ASIAIR Mini
-#    due to custom DDR timing — listed here only for reference)
+#    due to custom DDR timing - listed here only for reference)
 #    ./rk-flashtool db ../rkbin/rv1126_spl_loader_v1.14.110.bin  # DON'T USE
 
 # 4. Wait for DDR init + usbplug to load

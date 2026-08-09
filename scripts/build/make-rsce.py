@@ -4,8 +4,8 @@
 Reverse-engineered from stock ASIAIR Plus boot image.
 
 RSCE layout (512-byte blocks):
-  Block 0:    Header — magic "RSCE", entry count, table offset/size
-  Block 1-3:  Entry table — "ENTR" tag, filename, hash, data pointer
+  Block 0:    Header - magic "RSCE", entry count, table offset/size
+  Block 1-3:  Entry table - "ENTR" tag, filename, hash, data pointer
   Block 4+:   DTB data
 """
 
@@ -30,7 +30,7 @@ def build_rsce(dtb_path, output_path):
     header[9] = 1    # table offset (block 1)
     header[10] = 1   # entry size (1 block = 512 bytes)
 
-    # Entry (block 1) — matches stock format
+    # Entry (block 1) - matches stock format
     entry = bytearray(BLOCK)
     entry[0:4] = b"ENTR"
     name = b"rk-kernel.dtb"

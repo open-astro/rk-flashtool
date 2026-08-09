@@ -1,5 +1,5 @@
 /*
- * pwm_gpio.h — Reverse-engineered ioctl interface for ZWO ASIAIR Plus
+ * pwm_gpio.h - Reverse-engineered ioctl interface for ZWO ASIAIR Plus
  *
  * Module: pwm_gpio.ko
  * Author: JerryCui (ZWO)
@@ -48,7 +48,7 @@
 
 /*
  * struct gpio_level_s - GPIO level read/write
- * @index: GPIO index (0–11)
+ * @index: GPIO index (0-11)
  * @level: GPIO value (0 = low, 1 = high)
  */
 typedef struct gpio_level_s {
@@ -58,7 +58,7 @@ typedef struct gpio_level_s {
 
 /*
  * struct pwm_parm_s - PWM configuration
- * @index:     GPIO index (0–11)
+ * @index:     GPIO index (0-11)
  * @period_ns: PWM period in nanoseconds
  * @duty_ns:   PWM duty (high time) in nanoseconds
  */
@@ -70,7 +70,7 @@ typedef struct pwm_parm_s {
 
 /*
  * struct work_mode_s - GPIO/PWM mode selection
- * @index: GPIO index (0–11)
+ * @index: GPIO index (0-11)
  * @mode:  1 = GPIO mode, 2 = PWM mode
  */
 typedef struct work_mode_s {
@@ -81,7 +81,7 @@ typedef struct work_mode_s {
 /*
  * ioctl commands
  *
- * All commands take the GPIO index (0–11) as the first field.
+ * All commands take the GPIO index (0-11) as the first field.
  * The driver validates index < nr_gpios before dispatching.
  */
 

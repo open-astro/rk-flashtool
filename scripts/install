@@ -111,7 +111,7 @@ else
 
     echo ""
     echo "========================================"
-    echo "  Step 1/4 — Jailbreak"
+    echo "  Step 1/4 - Jailbreak"
     echo "========================================"
     echo ""
     echo "Enabling SSH on your ASIAIR via the OTA update mechanism."
@@ -152,7 +152,7 @@ else
 
     echo ""
     echo "========================================"
-    echo "  Step 2/4 — Backup"
+    echo "  Step 2/4 - Backup"
     echo "========================================"
     echo ""
     echo "Streaming all ASIAIR partitions over SSH."
@@ -169,7 +169,7 @@ else
     mkdir -p "$BACKUP_DIR"
 
     # Protect an existing stock backup. Once OpenAstro Linux has been flashed,
-    # the device is no longer stock — re-backing up here would capture the
+    # the device is no longer stock - re-backing up here would capture the
     # modified rootfs and (because restore-stock picks the most recent file)
     # shadow the only good stock backup. Skip unless --rebackup is given.
     EXISTING_BACKUP="$(ls -1t "$BACKUP_DIR"/*_p7_rootfs.bin 2>/dev/null | head -1)"
@@ -206,7 +206,7 @@ else
             mv -f "$tmp_file" "$local_file"
             local size
             size=$(du -h "$local_file" | cut -f1)
-            echo "    $size — OK"
+            echo "    $size - OK"
             ok_count=$((ok_count + 1))
         else
             rm -f "$tmp_file"
@@ -220,29 +220,29 @@ else
         "dd if=$DEVICE bs=512 count=16384 2>/dev/null" \
         "bootloader_pre_partition.bin"
 
-    pull_backup "p1 — U-Boot (4 MB)" \
+    pull_backup "p1 - U-Boot (4 MB)" \
         "dd if=${DEVICE}p1 bs=4M 2>/dev/null" \
         "p1_uboot.bin"
 
-    pull_backup "p2 — misc (4 MB)" \
+    pull_backup "p2 - misc (4 MB)" \
         "dd if=${DEVICE}p2 bs=4M 2>/dev/null" \
         "p2_misc.bin"
 
-    pull_backup "p3 — Boot image (64 MB)" \
+    pull_backup "p3 - Boot image (64 MB)" \
         "dd if=${DEVICE}p3 bs=4M 2>/dev/null" \
         "p3_boot.bin"
 
-    pull_backup "p4 — Recovery (32 MB)" \
+    pull_backup "p4 - Recovery (32 MB)" \
         "dd if=${DEVICE}p4 bs=4M 2>/dev/null" \
         "p4_recovery.bin"
 
-    pull_backup "p6 — /home/pi (512 MB)" \
+    pull_backup "p6 - /home/pi (512 MB)" \
         "dd if=${DEVICE}p6 bs=4M 2>/dev/null" \
         "p6_pi.bin"
 
     echo ""
-    echo "  p7 — Rootfs (7 GB) — this will take a few minutes..."
-    pull_backup "p7 — Rootfs" \
+    echo "  p7 - Rootfs (7 GB) - this will take a few minutes..."
+    pull_backup "p7 - Rootfs" \
         "dd if=${DEVICE}p7 bs=4M 2>/dev/null" \
         "p7_rootfs.bin"
 
@@ -266,7 +266,7 @@ if $FLASH_ONLY; then STEP="Step 1/2"; else STEP="Step 3/4"; fi
 
 echo ""
 echo "========================================"
-echo "  $STEP — Download OpenAstro Linux"
+echo "  $STEP - Download OpenAstro Linux"
 echo "========================================"
 echo ""
 
@@ -344,7 +344,7 @@ if $FLASH_ONLY; then STEP="Step 2/2"; else STEP="Step 4/4"; fi
 
 echo ""
 echo "========================================"
-echo "  $STEP — Flash Rootfs"
+echo "  $STEP - Flash Rootfs"
 echo "========================================"
 echo ""
 echo "Now you need to put the ASIAIR into Loader mode:"
