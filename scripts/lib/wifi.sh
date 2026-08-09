@@ -5,7 +5,7 @@
 # The unit broadcasts its own WiFi network that you join from a phone/laptop to
 # reach it directly (like the stock ASIAIR hotspot) - it does NOT join an
 # existing router. This is the useful mode in the field where there is no other
-# network. Clients get an IP via DHCP and the unit answers at 10.42.0.1.
+# network. Clients get an IP via DHCP and the unit answers at 172.24.1.1.
 #
 # Requirements baked into the image (see scripts/build/rootfs-setup.sh):
 #   - NetworkManager (manages the AP)
@@ -45,21 +45,25 @@ _wifi_write_profile() {
 
     mkdir -p "$dir"
     # mode=ap makes wlan0 a hotspot; ipv4 method=shared runs DHCP + NAT so
-    # clients get an address (10.42.0.x) and reach the unit at 10.42.0.1.
+    # clients get an address (172.24.1.x) and reach the unit at 172.24.1.1.
+    # 5 GHz channel 36 and the 172.24.1.1/24 pin match the other OpenAstro
+    # boards; priority -10 / retries 0 keep a future client-mode connection
+    # preferred without NM burning retries on the AP profile.
     cat > "$dir/openastro-ap.nmconnection" << EOF
 [connection]
 id=$ssid
 uuid=$uuid
 type=wifi
 autoconnect=true
-autoconnect-priority=10
+autoconnect-priority=-10
+autoconnect-retries=0
 interface-name=wlan0
 
 [wifi]
 mode=ap
 ssid=$ssid
-band=bg
-channel=6
+band=a
+channel=36
 
 [wifi-security]
 key-mgmt=wpa-psk
@@ -67,6 +71,7 @@ psk=$psk
 
 [ipv4]
 method=shared
+address1=172.24.1.1/24
 
 [ipv6]
 method=ignore
@@ -169,23 +174,33 @@ configure_wifi_in_image() {
         return 1
     fi
 
+    # Empty input takes the OpenAstro defaults: SSID OpenAstro-XXXX (XXXX =
+    # last 4 hex of the wlan0 MAC, applied on first boot by openastro-ssid)
+    # and password 12345678, matching the other OpenAstro boards.
+    #
     # Reject control characters (incl. a stray CR from CRLF input): they would
     # silently corrupt the NetworkManager keyfile, which is line-oriented INI.
-    local ssid=""
-    while [ -z "$ssid" ]; do
-        read -rp "  Hotspot name (SSID) to broadcast: " ssid
+    local ssid="" custom_ssid=0
+    while true; do
+        read -rp "  Hotspot name (SSID) [OpenAstro-XXXX, XXXX from WiFi MAC]: " ssid
         if [ -z "$ssid" ]; then
-            echo "  SSID cannot be empty."
+            ssid="OpenAstro"
+            break
         elif [[ "$ssid" == *[[:cntrl:]]* ]]; then
             echo "  SSID contains invalid (control) characters."
-            ssid=""
+        else
+            custom_ssid=1
+            break
         fi
     done
 
     local psk="" psk2=""
     while true; do
-        read -rsp "  Hotspot password: " psk; echo ""
-        if [ ${#psk} -lt 8 ]; then
+        read -rsp "  Hotspot password [12345678]: " psk; echo ""
+        if [ -z "$psk" ]; then
+            psk="12345678"
+            break
+        elif [ ${#psk} -lt 8 ]; then
             echo "  WPA passwords must be at least 8 characters."
             continue
         elif [[ "$psk" == *[[:cntrl:]]* ]]; then
@@ -214,6 +229,17 @@ configure_wifi_in_image() {
     # the loop mount. (A bare EXIT trap would clobber the caller's own trap.)
     local rc=0 dns_failed=0
     _wifi_write_profile "$mnt" "$ssid" "$psk" "$country" || rc=1
+    # A custom SSID must not get the -XXXX MAC suffix appended on first boot:
+    # the ssid-set stamp tells the openastro-ssid oneshot to leave it alone.
+    # With the default SSID the stamp must be absent so the suffix is applied.
+    if [ $rc -eq 0 ]; then
+        mkdir -p "$mnt/var/lib/openastro" || rc=1
+        if [ $custom_ssid -eq 1 ]; then
+            touch "$mnt/var/lib/openastro/ssid-set" || rc=1
+        else
+            rm -f "$mnt/var/lib/openastro/ssid-set" || rc=1
+        fi
+    fi
     # AP mode is useless without dnsmasq (DHCP for clients) - inject if missing.
     [ $rc -eq 0 ] && { _wifi_ensure_dnsmasq "$mnt" || dns_failed=1; }
 
@@ -241,9 +267,15 @@ configure_wifi_in_image() {
     fi
 
     echo ""
-    echo "WiFi hotspot \"$ssid\" configured (country $country)."
-    echo "After boot, join \"$ssid\" from your device, then:"
-    echo "  ssh astro@10.42.0.1"
-    echo "(astro.local also works if your client supports mDNS/Bonjour.)"
+    if [ $custom_ssid -eq 1 ]; then
+        echo "WiFi hotspot \"$ssid\" configured (country $country)."
+        echo "After boot, join \"$ssid\" from your device, then:"
+    else
+        echo "WiFi hotspot configured with defaults (country $country)."
+        echo "After boot, join \"OpenAstro-XXXX\" (XXXX = last 4 of the WiFi MAC,"
+        echo "shown on your device's WiFi list), password 12345678, then:"
+    fi
+    echo "  ssh astro@172.24.1.1"
+    echo "(openastro.local also works if your client supports mDNS/Bonjour.)"
     return 0
 }

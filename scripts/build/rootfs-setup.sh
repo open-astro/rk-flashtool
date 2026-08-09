@@ -50,10 +50,10 @@ mount --bind /sys "$ROOTFS/sys"
 cp /usr/bin/qemu-aarch64-static "$ROOTFS/usr/bin/" 2>/dev/null || true
 
 # --- Hostname ---
-echo "astro" > "$ROOTFS/etc/hostname"
+echo "openastro" > "$ROOTFS/etc/hostname"
 cat > "$ROOTFS/etc/hosts" << 'EOF'
 127.0.0.1	localhost
-127.0.1.1	astro
+127.0.1.1	openastro
 
 ::1		localhost ip6-localhost ip6-loopback
 ff02::1		ip6-allnodes
@@ -76,14 +76,94 @@ chroot "$ROOTFS" /bin/bash -c "echo 'en_US.UTF-8 UTF-8' > /etc/locale.gen && loc
 chroot "$ROOTFS" /bin/bash -c "echo 'root:astro' | chpasswd"
 chroot "$ROOTFS" /bin/bash -c "id astro >/dev/null 2>&1 || useradd -m -s /bin/bash -G sudo astro"
 chroot "$ROOTFS" /bin/bash -c "echo 'astro:astro' | chpasswd"
+# Hardware-access groups (only those that exist in this rootfs).
+for g in dialout plugdev audio video netdev gpio i2c spi; do
+    chroot "$ROOTFS" /bin/bash -c "getent group $g >/dev/null && usermod -aG $g astro" || true
+done
 
 # --- SSH ---
 chroot "$ROOTFS" /bin/bash -c "systemctl enable ssh"
 mkdir -p "$ROOTFS/etc/ssh/sshd_config.d"
-cat > "$ROOTFS/etc/ssh/sshd_config.d/allow-password.conf" << 'EOF'
+cat > "$ROOTFS/etc/ssh/sshd_config.d/openastro.conf" << 'EOF'
 PasswordAuthentication yes
-PermitRootLogin yes
+PermitRootLogin no
 EOF
+
+# Strip the host keys debootstrap generated: every image built from this rootfs
+# would otherwise share them fleet-wide. A oneshot regenerates unique keys on
+# each unit's first boot, before sshd starts.
+rm -f "$ROOTFS/etc/ssh/ssh_host_"*
+cat > "$ROOTFS/etc/systemd/system/openastro-sshkeys.service" << 'EOF'
+[Unit]
+Description=Generate SSH host keys on first boot
+Before=ssh.service
+ConditionPathExists=!/etc/ssh/ssh_host_ed25519_key
+
+[Service]
+Type=oneshot
+ExecStart=/usr/sbin/ssh-keygen -A
+
+[Install]
+WantedBy=multi-user.target
+EOF
+mkdir -p "$ROOTFS/etc/systemd/system/ssh.service.d"
+cat > "$ROOTFS/etc/systemd/system/ssh.service.d/openastro.conf" << 'EOF'
+[Unit]
+After=openastro-sshkeys.service
+Wants=openastro-sshkeys.service
+EOF
+chroot "$ROOTFS" /bin/bash -c "systemctl enable openastro-sshkeys"
+
+# --- Persistent journald ---
+# The directory's existence switches journald to persistent storage.
+chroot "$ROOTFS" /bin/bash -c "install -d -m 2755 -g systemd-journal /var/log/journal"
+
+# --- ZWO HID udev rule ---
+# ZWO EAF/EFW/filter wheels are USB HID devices (idVendor 03c3); let the
+# desktop user talk to them without root.
+cat > "$ROOTFS/etc/udev/rules.d/70-openastro-zwo-hid.rules" << 'EOF'
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="03c3", GROUP="users", MODE="0666"
+KERNEL=="hiddev*", ATTRS{idVendor}=="03c3", GROUP="users", MODE="0666"
+EOF
+
+# --- Per-board hotspot SSID (OpenAstro-XXXX) ---
+# On first boot, append the last 4 hex digits of the wlan0 MAC to the hotspot
+# SSID so every unit broadcasts a unique name. The stamp file prevents a second
+# suffix on later boots, and is pre-created at flash time when the user picks a
+# custom SSID (see scripts/lib/wifi.sh).
+cat > "$ROOTFS/usr/local/sbin/openastro-ssid" << 'EOF'
+#!/bin/sh
+set -e
+STAMP=/var/lib/openastro/ssid-set
+KEYFILE=/etc/NetworkManager/system-connections/openastro-ap.nmconnection
+[ -e "$STAMP" ] && exit 0
+[ -f "$KEYFILE" ] || exit 0
+# wlan0 appears once the bcmdhd module has loaded; give it a moment.
+i=0
+while [ ! -e /sys/class/net/wlan0/address ] && [ "$i" -lt 30 ]; do
+    sleep 0.5; i=$((i + 1))
+done
+[ -e /sys/class/net/wlan0/address ] || exit 0
+SUFFIX=$(tr -d ':\n' < /sys/class/net/wlan0/address | tail -c 4 | tr 'a-f' 'A-F')
+[ -n "$SUFFIX" ] || exit 0
+sed -i "s/^ssid=.*/ssid=OpenAstro-$SUFFIX/; s/^id=.*/id=OpenAstro-$SUFFIX/" "$KEYFILE"
+mkdir -p /var/lib/openastro
+touch "$STAMP"
+EOF
+chmod 755 "$ROOTFS/usr/local/sbin/openastro-ssid"
+cat > "$ROOTFS/etc/systemd/system/openastro-ssid.service" << 'EOF'
+[Unit]
+Description=Set per-board OpenAstro hotspot SSID
+Before=NetworkManager.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/openastro-ssid
+
+[Install]
+WantedBy=multi-user.target
+EOF
+chroot "$ROOTFS" /bin/bash -c "systemctl enable openastro-ssid"
 
 # --- NetworkManager ---
 chroot "$ROOTFS" /bin/bash -c "systemctl enable NetworkManager"
@@ -149,10 +229,10 @@ rm -f "$ROOTFS/usr/bin/qemu-aarch64-static"
 
 echo ""
 echo "=== ASIAIR Debian rootfs setup complete ==="
-echo "  Hostname: astro"
+echo "  Hostname: openastro"
 echo "  User: astro / astro"
-echo "  Root: root / astro"
-echo "  SSH: enabled"
+echo "  Root: root / astro (SSH root login disabled)"
+echo "  SSH: enabled, unique host keys generated on first boot"
 echo "  Kernel modules: stock 4.19.219"
 echo "  Firmware: stock (BCM43456 WiFi/BT)"
 echo ""
