@@ -78,7 +78,7 @@ echo ""
 
 # If in Maskrom, load DDR/SPL first
 if $TOOL ld 2>/dev/null | grep -q "Maskrom"; then
-    echo "Device in Maskrom — loading DDR/SPL..."
+    echo "Device in Maskrom - loading DDR/SPL..."
     if [ ! -f "$LOADER" ]; then
         echo "Loader not found: $LOADER"
         echo "Set LOADER= or place rk356x_spl_loader_v1.23.114.bin alongside this repo."
@@ -102,7 +102,7 @@ if [ -z "$BOOTLOADER" ] || [ -z "$UBOOT" ] || [ -z "$BOOT" ]; then
     exit 1
 fi
 
-# Find rootfs image — try .img, then .img.gz
+# Find rootfs image - try .img, then .img.gz
 ROOTFS_IMG="$ROOTFS_ARG"
 if [ ! -f "$ROOTFS_IMG" ] && [ -f "${ROOTFS_IMG}.gz" ]; then
     ROOTFS_IMG="${ROOTFS_IMG}.gz"

@@ -67,7 +67,7 @@ if [ ! -x "$TOOL" ]; then
     exit 1
 fi
 
-# Find rootfs image — try .img, then .img.gz
+# Find rootfs image - try .img, then .img.gz
 ROOTFS_IMG="$ROOTFS_ARG"
 if [ ! -f "$ROOTFS_IMG" ] && [ -f "${ROOTFS_IMG}.gz" ]; then
     ROOTFS_IMG="${ROOTFS_IMG}.gz"

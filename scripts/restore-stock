@@ -4,8 +4,8 @@ set -e
 # Restore stock ASIAIR firmware from backup.
 #
 # Two modes:
-#   1. Rootfs only (default) — restores just partition 7. Safe, works in Loader mode.
-#   2. Full restore — restores bootloader + all partitions. For recovery from a
+#   1. Rootfs only (default) - restores just partition 7. Safe, works in Loader mode.
+#   2. Full restore - restores bootloader + all partitions. For recovery from a
 #      bricked device. Requires Maskrom mode.
 #
 # Usage:
@@ -118,7 +118,7 @@ if $FULL_RESTORE; then
         exit 1
     }
 
-    echo "Device in Maskrom — loading DDR/SPL..."
+    echo "Device in Maskrom - loading DDR/SPL..."
     LOADER=""
     if [ -f "$REPODIR/blobs/rk356x_spl_loader_v1.23.114.bin" ]; then
         LOADER="$REPODIR/blobs/rk356x_spl_loader_v1.23.114.bin"
@@ -144,7 +144,7 @@ if $FULL_RESTORE; then
     $TOOL wl 0x8000 "$BOOT"
     sleep 3
 
-    echo "Restoring rootfs (p7) — this will take several minutes..."
+    echo "Restoring rootfs (p7) - this will take several minutes..."
     $TOOL wl 0x1BD38000 "$ROOTFS"
 
     if [ -n "$PI_PART" ]; then
@@ -168,7 +168,7 @@ else
         exit 1
     }
 
-    echo "Restoring stock rootfs (p7) — this will take several minutes..."
+    echo "Restoring stock rootfs (p7) - this will take several minutes..."
     $TOOL wl 0x1BD38000 "$ROOTFS"
 fi
 

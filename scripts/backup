@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# ASIAIR Plus RK3568 — Full eMMC Backup Script
+# ASIAIR Plus RK3568 - Full eMMC Backup Script
 #
 # Run this FROM YOUR LOCAL MACHINE (not on the ASIAIR).
 # It streams each partition over SSH directly to local storage.
@@ -93,7 +93,7 @@ pull_backup "GPT backup (last 33 sectors)" \
     "gpt_backup.bin"
 
 # ============================================================
-# Pre-partition bootloader area (sectors 0–16383)
+# Pre-partition bootloader area (sectors 0-16383)
 # ============================================================
 echo "=== Pre-Partition Bootloader ==="
 
@@ -106,44 +106,44 @@ pull_backup "Bootloader area (sectors 0-16383, 8 MB)" \
 # ============================================================
 echo "=== Partitions ==="
 
-pull_backup "p1 — uboot (4 MB)" \
+pull_backup "p1 - uboot (4 MB)" \
     "dd if=${DEVICE}p1 bs=4M 2>/dev/null" \
     "p1_uboot.bin"
 
-pull_backup "p2 — misc (4 MB)" \
+pull_backup "p2 - misc (4 MB)" \
     "dd if=${DEVICE}p2 bs=4M 2>/dev/null" \
     "p2_misc.bin"
 
-pull_backup "p3 — boot (64 MB, kernel + ramdisk)" \
+pull_backup "p3 - boot (64 MB, kernel + ramdisk)" \
     "dd if=${DEVICE}p3 bs=4M 2>/dev/null" \
     "p3_boot.bin"
 
-pull_backup "p4 — recovery (32 MB)" \
+pull_backup "p4 - recovery (32 MB)" \
     "dd if=${DEVICE}p4 bs=4M 2>/dev/null" \
     "p4_recovery.bin"
 
-# p5 — asiair (222 GB) — back up VFAT header only
-echo "--- p5 — asiair (222 GB VFAT image storage) ---"
+# p5 - asiair (222 GB) - back up VFAT header only
+echo "--- p5 - asiair (222 GB VFAT image storage) ---"
 echo "  NOTE: Backing up first 64 MB only (VFAT header + FAT tables)."
 echo "  For a full image backup, run separately:"
 echo "    $SSH_CMD $REMOTE 'echo $PASS | sudo -S dd if=${DEVICE}p5 bs=4M 2>/dev/null | gzip' > p5_full.gz"
 echo ""
 
-pull_backup "p5 — asiair VFAT header (first 64 MB)" \
+pull_backup "p5 - asiair VFAT header (first 64 MB)" \
     "dd if=${DEVICE}p5 bs=4M count=16 2>/dev/null" \
     "p5_asiair_header.bin"
 
-pull_backup "p6 — pi (512 MB, /home/pi)" \
+pull_backup "p6 - pi (512 MB, /home/pi)" \
     "dd if=${DEVICE}p6 bs=4M 2>/dev/null" \
     "p6_pi.bin"
 
-echo "--- p7 — rootfs (7 GB) — this will take a few minutes ---"
-pull_backup "p7 — rootfs (7 GB, stock root filesystem)" \
+echo "--- p7 - rootfs (7 GB) - this will take a few minutes ---"
+pull_backup "p7 - rootfs (7 GB, stock root filesystem)" \
     "dd if=${DEVICE}p7 bs=4M 2>/dev/null" \
     "p7_rootfs.bin"
 
-# p8 — swap — skip
-echo "--- p8 — swap (3.4 GB) ---"
+# p8 - swap - skip
+echo "--- p8 - swap (3.4 GB) ---"
 echo "  Skipping: recreatable with mkswap."
 echo ""
 

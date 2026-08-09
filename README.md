@@ -1,8 +1,8 @@
-# OpenAstro Linux — Debian 13 Trixie for the ASIAIR Plus Rockchip
+# OpenAstro Linux - Debian 13 Trixie for the ASIAIR Plus Rockchip
 
 <img src="https://www.openastro.net/wp-content/uploads/2026/04/OpenAstro_logo.png" alt="AlpacaBridge logo" width="420">
 
-Replace the stock ZWO firmware on your ASIAIR Plus with **Debian 13 (Trixie)** while keeping full hardware support — USB, WiFi, DC power ports, LEDs, and GPIO. Restore to stock at any time from your backup.
+Replace the stock ZWO firmware on your ASIAIR Plus with **Debian 13 (Trixie)** while keeping full hardware support - USB, WiFi, DC power ports, LEDs, and GPIO. Restore to stock at any time from your backup.
 
 ## Supported Hardware
 
@@ -14,12 +14,12 @@ The ASIAIR Mini (RV1126) is documented in [`hardware/asiair-mini-rv1126/`](hardw
 
 ## How It Works
 
-OpenAstro Linux uses the **stock ASIAIR bootloader and kernel** — only the root filesystem (partition 7) is replaced with Debian Trixie. This means:
+OpenAstro Linux uses the **stock ASIAIR bootloader and kernel** - only the root filesystem (partition 7) is replaced with Debian Trixie. This means:
 
 - Stock boot chain is untouched (bootloader, kernel, device tree)
 - All hardware works out of the box (same drivers as stock)
 - Restore to stock firmware at any time with one command
-- No repartitioning — stock partition table is preserved
+- No repartitioning - stock partition table is preserved
 
 ## Install
 
@@ -50,9 +50,9 @@ sudo scripts/install
 The installer handles everything automatically:
 
 1. **Jailbreaks** your ASIAIR to enable SSH (over the network, no physical access)
-2. **Backs up** all partitions over SSH (~7.7 GB) — your only way back to stock
+2. **Backs up** all partitions over SSH (~7.7 GB) - your only way back to stock
 3. **Downloads** the OpenAstro Linux image from GitHub Releases
-4. **Offers a WiFi hotspot** — set an SSID/password and the unit broadcasts its own network (like the stock ASIAIR); join it and reach the unit at `astro@10.42.0.1`. Skip to connect over the wired Ethernet port
+4. **Offers a WiFi hotspot** - set an SSID/password and the unit broadcasts its own network (like the stock ASIAIR); join it and reach the unit at `astro@10.42.0.1`. Skip to connect over the wired Ethernet port
 5. **Pauses** and asks you to enter Loader mode (hold the reset button while powering on)
 6. **Flashes** the stock boot chain from your backup + OpenAstro Linux rootfs
 
@@ -89,7 +89,7 @@ sudo scripts/restore-stock
 
 This restores just the rootfs (partition 7) from your backup. The boot chain was never modified, so only the rootfs needs to be restored.
 
-If the device is bricked and won't enter Loader mode, use the full restore (requires Maskrom — eMMC shorting):
+If the device is bricked and won't enter Loader mode, use the full restore (requires Maskrom - eMMC shorting):
 
 ```bash
 sudo scripts/restore-stock --full
@@ -139,7 +139,7 @@ sudo scripts/flash-rootfs
 
 | Script | Description |
 |--------|-------------|
-| `scripts/install` | **Full installer** — jailbreak, backup, download, flash. Use `--flash-only` to skip jailbreak/backup |
+| `scripts/install` | **Full installer** - jailbreak, backup, download, flash. Use `--flash-only` to skip jailbreak/backup |
 | `scripts/jailbreak` | Enable SSH on a stock ASIAIR (network, no physical access) |
 | `scripts/backup` | Backup ASIAIR eMMC over SSH |
 | `scripts/flash-all` | Full flash: restore stock boot chain + write OpenAstro Linux rootfs |
@@ -154,9 +154,9 @@ sudo scripts/flash-rootfs
 
 Detailed hardware reference is in [`hardware/asiair-plus-rk3568-256g/`](hardware/asiair-plus-rk3568-256g/):
 
-- [`inventory.md`](hardware/asiair-plus-rk3568-256g/inventory.md) — Full hardware inventory, GPIO map, peripheral details
-- [`plan.md`](hardware/asiair-plus-rk3568-256g/plan.md) — Project status and roadmap
-- [`flashtool-recovery.md`](hardware/asiair-plus-rk3568-256g/flashtool-recovery.md) — rk-flashtool commands, Maskrom recovery, partition layout
+- [`inventory.md`](hardware/asiair-plus-rk3568-256g/inventory.md) - Full hardware inventory, GPIO map, peripheral details
+- [`plan.md`](hardware/asiair-plus-rk3568-256g/plan.md) - Project status and roadmap
+- [`flashtool-recovery.md`](hardware/asiair-plus-rk3568-256g/flashtool-recovery.md) - rk-flashtool commands, Maskrom recovery, partition layout
 
 ## rk-flashtool
 
@@ -180,7 +180,7 @@ sudo ./rk-flashtool -h
 
 ### Device not detected on USB
 
-- Check `lsusb | grep 2207` — you should see VID `2207`
+- Check `lsusb | grep 2207` - you should see VID `2207`
 - Make sure udev rules are installed (`99-rk-rockusb.rules`)
 - Try a different USB cable (some USB-C cables are charge-only)
 - The ASIAIR must be in Maskrom or Loader mode, not booted normally
