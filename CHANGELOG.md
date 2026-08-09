@@ -16,6 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Persistent journald logs (`/var/log/journal`).
   - ZWO HID udev rule (`70-openastro-zwo-hid.rules`, idVendor 03c3, hidraw + hiddev, mode 0666).
   - User `astro` added to hardware-access groups (dialout, plugdev, audio, video, netdev where present).
+  - Fleet WiFi conf (`20-openastro-wifi.conf`): powersave off, no scan MAC randomization. NetworkManager manages all interfaces, ethernet included.
+  - AlpacaBridge preinstall hook from apt.openastro.net, gated behind `INSTALL_ALPACABRIDGE` (default `no` until the next AlpacaBridge release ships).
 
 ### Changed
 - **Hostname is now `openastro`** (was `astro`); connect with `ssh astro@openastro.local`.

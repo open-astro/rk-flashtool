@@ -166,7 +166,22 @@ EOF
 chroot "$ROOTFS" /bin/bash -c "systemctl enable openastro-ssid"
 
 # --- NetworkManager ---
+# NM manages ALL interfaces (fleet policy), ethernet included: with no
+# ifupdown/systemd-networkd config in this rootfs, eth0 falls to NM's
+# default DHCP.
 chroot "$ROOTFS" /bin/bash -c "systemctl enable NetworkManager"
+
+# Fleet WiFi conf: no powersave (dropping clients mid-session would strand a
+# mount served all night) and no scan MAC randomization (stable radio
+# identity).
+mkdir -p "$ROOTFS/etc/NetworkManager/conf.d"
+cat > "$ROOTFS/etc/NetworkManager/conf.d/20-openastro-wifi.conf" << 'EOF'
+[connection]
+wifi.powersave=2
+
+[device]
+wifi.scan-rand-mac-address=no
+EOF
 
 # --- WiFi hotspot dependency ---
 # The optional WiFi hotspot (NetworkManager "ipv4 method=shared") needs the
@@ -208,6 +223,23 @@ cp "$FW_SRC/fw_bcm43456c5_ag_p2p.bin"   "$FW_DST/fw_bcmdhd_p2p.bin"
 cp "$FW_SRC/nvram_ap6256.txt"            "$FW_DST/nvram.txt"
 cp "$FW_SRC/nvram_ap6256.txt"            "$FW_DST/nvram_ap6256.txt"
 cp "$FW_SRC/BCM4345C5.hcd"              "$FW_DST/BCM4345C5.hcd"
+
+# --- AlpacaBridge (from apt.openastro.net) ---
+# Temporarily off by default: waiting on the next AlpacaBridge release
+# (new WiFi module). Flip to yes once it ships. Needs outbound network in
+# the chroot, same as the dnsmasq safety net above.
+INSTALL_ALPACABRIDGE="${INSTALL_ALPACABRIDGE:-no}"
+if [ "$INSTALL_ALPACABRIDGE" = yes ]; then
+    echo "Installing AlpacaBridge from apt.openastro.net..."
+    chroot "$ROOTFS" /bin/bash -c "
+        curl -fsSL https://apt.openastro.net/repo/openastro-archive-keyring.gpg \
+            | gpg --dearmor --yes -o /usr/share/keyrings/openastro-archive-keyring.gpg
+        echo \"deb [arch=\$(dpkg --print-architecture) signed-by=/usr/share/keyrings/openastro-archive-keyring.gpg] https://apt.openastro.net trixie main\" \
+            > /etc/apt/sources.list.d/openastro.list
+        apt-get update -qq
+        DEBIAN_FRONTEND=noninteractive apt-get install -y -qq alpacabridge >/dev/null
+    "
+fi
 
 # --- Auto-load pwm_gpio module ---
 mkdir -p "$ROOTFS/etc/modules-load.d"
