@@ -47,8 +47,9 @@ _wifi_write_profile() {
     # mode=ap makes wlan0 a hotspot; ipv4 method=shared runs DHCP + NAT so
     # clients get an address (172.24.1.x) and reach the unit at 172.24.1.1.
     # 5 GHz channel 36 and the 172.24.1.1/24 pin match the other OpenAstro
-    # boards; priority -10 / retries 0 keep a future client-mode connection
-    # preferred without NM burning retries on the AP profile.
+    # boards. priority -10 keeps a future client-mode connection preferred;
+    # autoconnect-retries=0 means "retry forever" in NetworkManager (not "no
+    # retries"), so the AP profile stays an always-available fallback.
     cat > "$dir/openastro-ap.nmconnection" << EOF
 [connection]
 id=$ssid
@@ -209,6 +210,9 @@ configure_wifi_in_image() {
         read -rsp "  Hotspot password [12345678]: " psk; echo ""
         if [ -z "$psk" ]; then
             psk="12345678"
+            echo "  WARNING: using the fleet-default password 12345678. It is"
+            echo "  public knowledge - anyone in WiFi range can join this hotspot."
+            echo "  Set a custom password if the unit operates around strangers."
             break
         elif [ ${#psk} -lt 8 ]; then
             echo "  WPA passwords must be at least 8 characters."

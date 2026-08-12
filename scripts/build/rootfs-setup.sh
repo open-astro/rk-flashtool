@@ -128,8 +128,8 @@ chroot "$ROOTFS" /bin/bash -c "install -d -m 2755 -g systemd-journal /var/log/jo
 # ZWO EAF/EFW/filter wheels are USB HID devices (idVendor 03c3); let the
 # desktop user talk to them without root.
 cat > "$ROOTFS/etc/udev/rules.d/70-openastro-zwo-hid.rules" << 'EOF'
-SUBSYSTEM=="hidraw", ATTRS{idVendor}=="03c3", GROUP="users", MODE="0666"
-KERNEL=="hiddev*", ATTRS{idVendor}=="03c3", GROUP="users", MODE="0666"
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="03c3", GROUP="plugdev", MODE="0666"
+KERNEL=="hiddev*", ATTRS{idVendor}=="03c3", GROUP="plugdev", MODE="0666"
 EOF
 
 # --- Per-board hotspot SSID (OpenAstro-XXXX) ---
@@ -278,23 +278,30 @@ if [ "$INSTALL_ALPACABRIDGE" = yes ]; then
     echo "Configuring apt.openastro.net repository..."
     # Fetch + dearmor the keyring on the build host: the image does not ship
     # gnupg (apt itself never needs it, only the one-time dearmor does).
-    curl -fsSL https://apt.openastro.net/repo/openastro-archive-keyring.gpg \
-        | gpg --dearmor --yes -o "$ROOTFS/usr/share/keyrings/openastro-archive-keyring.gpg"
-    chroot "$ROOTFS" /bin/bash -c "
-        echo \"deb [arch=\$(dpkg --print-architecture) signed-by=/usr/share/keyrings/openastro-archive-keyring.gpg] https://apt.openastro.net trixie main\" \
-            > /etc/apt/sources.list.d/openastro.list
-        apt-get update -qq
-    "
-    if [ -n "${ALPACABRIDGE_DEB:-}" ]; then
-        echo "Installing AlpacaBridge from local .deb: $ALPACABRIDGE_DEB"
-        cp "$ALPACABRIDGE_DEB" "$ROOTFS/tmp/alpacabridge.deb"
-        chroot "$ROOTFS" /bin/bash -c \
-            "DEBIAN_FRONTEND=noninteractive apt-get install -y -qq /tmp/alpacabridge.deb >/dev/null"
-        rm -f "$ROOTFS/tmp/alpacabridge.deb"
+    # Degrade with a warning on network failure, like the other network-
+    # dependent steps above - an offline build must still produce an image.
+    if curl -fsSL https://apt.openastro.net/repo/openastro-archive-keyring.gpg \
+        | gpg --dearmor --yes -o "$ROOTFS/usr/share/keyrings/openastro-archive-keyring.gpg"; then
+        chroot "$ROOTFS" /bin/bash -c "
+            echo \"deb [arch=\$(dpkg --print-architecture) signed-by=/usr/share/keyrings/openastro-archive-keyring.gpg] https://apt.openastro.net trixie main\" \
+                > /etc/apt/sources.list.d/openastro.list
+            apt-get update -qq
+        " || echo "WARNING: apt.openastro.net update failed; AlpacaBridge may not install"
+        if [ -n "${ALPACABRIDGE_DEB:-}" ]; then
+            echo "Installing AlpacaBridge from local .deb: $ALPACABRIDGE_DEB"
+            cp "$ALPACABRIDGE_DEB" "$ROOTFS/tmp/alpacabridge.deb"
+            chroot "$ROOTFS" /bin/bash -c \
+                "DEBIAN_FRONTEND=noninteractive apt-get install -y -qq /tmp/alpacabridge.deb >/dev/null" \
+                || echo "WARNING: AlpacaBridge .deb install failed; image will not ship AlpacaBridge"
+            rm -f "$ROOTFS/tmp/alpacabridge.deb"
+        else
+            echo "Installing AlpacaBridge from apt.openastro.net..."
+            chroot "$ROOTFS" /bin/bash -c \
+                "DEBIAN_FRONTEND=noninteractive apt-get install -y -qq alpacabridge >/dev/null" \
+                || echo "WARNING: AlpacaBridge install failed; image will not ship AlpacaBridge"
+        fi
     else
-        echo "Installing AlpacaBridge from apt.openastro.net..."
-        chroot "$ROOTFS" /bin/bash -c \
-            "DEBIAN_FRONTEND=noninteractive apt-get install -y -qq alpacabridge >/dev/null"
+        echo "WARNING: could not fetch the apt.openastro.net keyring; skipping AlpacaBridge install"
     fi
 fi
 

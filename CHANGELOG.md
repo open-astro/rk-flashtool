@@ -26,7 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - **Hostname is now `openastro`** (was `astro`); connect with `ssh astro@openastro.local`.
 - **SSH root login disabled**; use `astro` + sudo.
-- **Hotspot aligned with the OpenAstro fleet defaults**: 5 GHz channel 36, unit pinned at 172.24.1.1/24, autoconnect-priority -10 with no retries. The installer prompt now defaults to SSID `OpenAstro-XXXX` and password `12345678` on empty input instead of requiring custom values. 5 GHz AP mode on the stock bcmdhd driver was validated on hardware 2026-08-09 (AP-ENABLED at 5180 MHz).
+- **Hotspot aligned with the OpenAstro fleet defaults**: 5 GHz channel 36, unit pinned at 172.24.1.1/24, autoconnect-priority -10 with unlimited retries (`autoconnect-retries=0` means "retry forever" in NetworkManager), keeping the AP profile as an always-available fallback. The installer prompt now defaults to SSID `OpenAstro-XXXX` and password `12345678` on empty input instead of requiring custom values. 5 GHz AP mode on the stock bcmdhd driver was validated on hardware 2026-08-09 (AP-ENABLED at 5180 MHz).
 
 ### Fixed
 - **Installer no longer destroys an existing stock backup** (`scripts/install`)
