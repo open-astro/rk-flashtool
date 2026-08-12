@@ -266,9 +266,11 @@ sed -i 's/^ccode=.*/ccode=US/' \
 INSTALL_ALPACABRIDGE="${INSTALL_ALPACABRIDGE:-yes}"
 if [ "$INSTALL_ALPACABRIDGE" = yes ]; then
     echo "Configuring apt.openastro.net repository..."
+    # Fetch + dearmor the keyring on the build host: the image does not ship
+    # gnupg (apt itself never needs it, only the one-time dearmor does).
+    curl -fsSL https://apt.openastro.net/repo/openastro-archive-keyring.gpg \
+        | gpg --dearmor --yes -o "$ROOTFS/usr/share/keyrings/openastro-archive-keyring.gpg"
     chroot "$ROOTFS" /bin/bash -c "
-        curl -fsSL https://apt.openastro.net/repo/openastro-archive-keyring.gpg \
-            | gpg --dearmor --yes -o /usr/share/keyrings/openastro-archive-keyring.gpg
         echo \"deb [arch=\$(dpkg --print-architecture) signed-by=/usr/share/keyrings/openastro-archive-keyring.gpg] https://apt.openastro.net trixie main\" \
             > /etc/apt/sources.list.d/openastro.list
         apt-get update -qq
