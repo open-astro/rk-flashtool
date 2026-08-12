@@ -108,7 +108,7 @@ sudo apt install debootstrap qemu-user-static
 
 sudo debootstrap --arch=arm64 \
   --include=systemd,systemd-sysv,systemd-timesyncd,openssh-server,network-manager,\
-dnsmasq-base,libpam-systemd,polkitd,wireless-regdb,iw,sudo,\
+dnsmasq-base,wpasupplicant,libpam-systemd,polkitd,wireless-regdb,iw,sudo,\
 vim-tiny,less,locales,dbus,iproute2,iputils-ping,wget,curl,\
 ca-certificates,usbutils,pciutils,kmod \
   trixie ../asiair-rootfs http://deb.debian.org/debian

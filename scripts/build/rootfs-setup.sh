@@ -246,8 +246,13 @@ fi
 # wireless-regdb: the kernel otherwise logs "Direct firmware load for
 #                 regulatory.db failed" and falls back to the world regdom.
 # iw:             field diagnostics (works unprivileged on this driver).
+# wpasupplicant:  REQUIRED - NetworkManager cannot drive ANY wifi device
+#                 (AP mode included) without wpa_supplicant; it is only a
+#                 Recommends of network-manager, which debootstrap skips.
+#                 Without it both wifi devices sit "unavailable" and the
+#                 hotspot never comes up.
 # Normally present from the debootstrap --include list; safety net like above.
-for pkg in polkitd wireless-regdb iw; do
+for pkg in polkitd wireless-regdb iw wpasupplicant; do
     if ! chroot "$ROOTFS" dpkg -s "$pkg" >/dev/null 2>&1; then
         echo "Installing $pkg..."
         chroot "$ROOTFS" /bin/bash -c "DEBIAN_FRONTEND=noninteractive apt-get install -y $pkg" \
