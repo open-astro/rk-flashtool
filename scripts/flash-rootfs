@@ -11,7 +11,7 @@ REPODIR="$(cd "$(dirname "$0")/.." && pwd)"
 TOOL="$REPODIR/rk-flashtool"
 # shellcheck source=lib/wifi.sh
 . "$REPODIR/scripts/lib/wifi.sh"
-RELEASE_URL="https://github.com/open-astro/rk-flashtool/releases/download/v1.0/rootfs-stock.img.gz"
+RELEASE_URL="https://github.com/open-astro/rk-flashtool/releases/download/v1.1/rootfs-stock.img.gz"
 IMAGES_DIR="$REPODIR/images"
 
 # pick_workdir() is provided by scripts/lib/wifi.sh (sourced above).

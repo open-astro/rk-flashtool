@@ -18,7 +18,7 @@ if [ -z "$LOADER" ]; then
     fi
 fi
 CLEANUP_TMP=""
-RELEASE_URL="https://github.com/open-astro/rk-flashtool/releases/download/v1.0/astrolinux-trixie-rk3568.img.gz"
+RELEASE_URL="https://github.com/open-astro/rk-flashtool/releases/download/v1.1/rootfs-stock.img.gz"
 IMAGES_DIR="$REPODIR/images"
 
 # Search order for rootfs image: arg > images/ in repo > ../asiair-image/

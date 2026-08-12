@@ -72,9 +72,12 @@ ssh astro@openastro.local
 | User | `astro` |
 | Password | `astro` |
 | SSH | Enabled (root login disabled; unique host keys are generated on first boot) |
-| WiFi | Optional hotspot set during install (default `OpenAstro-XXXX` / `12345678`, reach unit at `172.24.1.1`), or configure later via `nmcli` |
+| WiFi | Optional hotspot set during install (default `OpenAstro-XXXX` / `12345678`, reach unit at `172.24.1.1`), or manage from the AlpacaBridge portal's WiFi card |
+| AlpacaBridge | Preinstalled ASCOM Alpaca server + web portal at `http://openastro.local:6800` (from the hotspot: `http://172.24.1.1:6800` or `http://openastro.lan:6800`) |
 
 **Change the default password immediately:** `passwd`
+
+[AlpacaBridge](https://github.com/open-astro/AlpacaBridge) comes preinstalled and updates via `apt` from apt.openastro.net. Its web portal manages devices, WiFi (scan/join networks, hotspot settings, regulatory country), and time sync.
 
 > The hotspot uses 5 GHz channel 36 (matching the other OpenAstro boards), verified working on ASIAIR hardware with the stock bcmdhd driver (2026-08-09 live test, `AP-ENABLED` at 5180 MHz). If your regulatory domain disallows it, switch the profile to 2.4 GHz (`band=bg`, `channel=6`) in `/etc/NetworkManager/system-connections/openastro-ap.nmconnection`, or use the AlpacaBridge web portal's WiFi card.
 
