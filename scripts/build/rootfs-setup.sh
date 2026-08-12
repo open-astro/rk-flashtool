@@ -47,6 +47,11 @@ fi
 # catastrophic - a later "rm -rf $ROOTFS" would descend into the real /dev.
 cleanup_binds() {
     umount -l "$ROOTFS/sys" "$ROOTFS/proc" "$ROOTFS/dev/pts" "$ROOTFS/dev" 2>/dev/null || true
+    # Also release the read-only stock-image loop mount on error exits, so a
+    # failed run doesn't leak it until reboot. Harmless if already unmounted.
+    if [ "${UNMOUNT_STOCK:-0}" = "1" ]; then
+        umount "$STOCKMNT" 2>/dev/null && rmdir "$STOCKMNT" 2>/dev/null || true
+    fi
 }
 trap cleanup_binds EXIT
 mount --bind /dev "$ROOTFS/dev"
@@ -146,13 +151,24 @@ KEYFILE=/etc/NetworkManager/system-connections/openastro-ap.nmconnection
 [ -f "$KEYFILE" ] || exit 0
 # wlan0 appears once the bcmdhd module has loaded. Wait up to 60s: a slow
 # firmware load past a short timeout would leave the AP broadcasting the
-# un-suffixed fleet-default SSID for that boot. (Delaying NetworkManager
-# that long on a wlan0-less boot is fine - no wlan0, nothing to manage.)
+# un-suffixed fleet-default SSID for that boot. But only pay that wait a
+# few boots: on a unit whose radio never comes up (firmware/hardware
+# fault), give up permanently after 3 failed attempts rather than adding
+# 60s to every boot forever.
+ATTEMPTS=/var/lib/openastro/ssid-attempts
+mkdir -p /var/lib/openastro
+n=$(cat "$ATTEMPTS" 2>/dev/null || echo 0)
+case "$n" in *[!0-9]*|'') n=0 ;; esac
+if [ "$n" -ge 3 ]; then exit 0; fi
 i=0
 while [ ! -e /sys/class/net/wlan0/address ] && [ "$i" -lt 120 ]; do
     sleep 0.5; i=$((i + 1))
 done
-[ -e /sys/class/net/wlan0/address ] || exit 0
+if [ ! -e /sys/class/net/wlan0/address ]; then
+    echo $((n + 1)) > "$ATTEMPTS"
+    exit 0
+fi
+rm -f "$ATTEMPTS"
 SUFFIX=$(tr -d ':\n' < /sys/class/net/wlan0/address | tail -c 4 | tr 'a-f' 'A-F')
 [ -n "$SUFFIX" ] || exit 0
 sed -i "s/^ssid=.*/ssid=OpenAstro-$SUFFIX/; s/^id=.*/id=OpenAstro-$SUFFIX/" "$KEYFILE"
@@ -321,7 +337,6 @@ EOF
 cleanup_binds
 trap - EXIT
 rm -f "$ROOTFS/usr/bin/qemu-aarch64-static"
-[ "$UNMOUNT_STOCK" = "1" ] && umount "$STOCKMNT" && rmdir "$STOCKMNT"
 
 echo ""
 echo "=== ASIAIR Debian rootfs setup complete ==="
