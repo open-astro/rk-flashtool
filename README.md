@@ -52,7 +52,7 @@ The installer handles everything automatically:
 1. **Jailbreaks** your ASIAIR to enable SSH (over the network, no physical access)
 2. **Backs up** all partitions over SSH (~7.7 GB) - your only way back to stock
 3. **Downloads** the OpenAstro Linux image from GitHub Releases
-4. **Offers a WiFi hotspot** - set an SSID/password and the unit broadcasts its own network (like the stock ASIAIR); join it and reach the unit at `astro@10.42.0.1`. Skip to connect over the wired Ethernet port
+4. **Offers a WiFi hotspot** - the unit broadcasts its own network (like the stock ASIAIR); join it and reach the unit at `astro@172.24.1.1`. Defaults to SSID `OpenAstro-XXXX` (XXXX = last 4 of the WiFi MAC) with password `12345678`, or enter your own SSID/password at the prompt. Skip to connect over the wired Ethernet port
 5. **Pauses** and asks you to enter Loader mode (hold the reset button while powering on)
 6. **Flashes** the stock boot chain from your backup + OpenAstro Linux rootfs
 
@@ -63,18 +63,23 @@ Total time: ~15 minutes (mostly waiting for the backup transfer).
 The device reboots automatically after flashing. Disconnect USB and wait about 60 seconds.
 
 ```
-ssh astro@astro.local
+ssh astro@openastro.local
 ```
 
 | Setting | Value |
 |---------|-------|
-| Hostname | `astro` |
+| Hostname | `openastro` |
 | User | `astro` |
 | Password | `astro` |
-| SSH | Enabled |
-| WiFi | Optional hotspot set during install (reach unit at `10.42.0.1`), or configure later via `nmcli` |
+| SSH | Enabled (root login disabled; unique host keys are generated on first boot) |
+| WiFi | Optional hotspot set during install (default `OpenAstro-XXXX` / `12345678`, reach unit at `172.24.1.1`), or manage from the AlpacaBridge portal's WiFi card |
+| AlpacaBridge | Preinstalled ASCOM Alpaca server + web portal at `http://openastro.local:6800` (from the hotspot: `http://172.24.1.1:6800` or `http://openastro.lan:6800`) |
 
 **Change the default password immediately:** `passwd`
+
+[AlpacaBridge](https://github.com/open-astro/AlpacaBridge) comes preinstalled and updates via `apt` from apt.openastro.net. Its web portal manages devices, WiFi (scan/join networks, hotspot settings, regulatory country), and time sync.
+
+> The hotspot uses 5 GHz channel 36 (matching the other OpenAstro boards), verified working on ASIAIR hardware with the stock bcmdhd driver (2026-08-09 live test, `AP-ENABLED` at 5180 MHz). If your regulatory domain disallows it, switch the profile to 2.4 GHz (`band=bg`, `channel=6`) in `/etc/NetworkManager/system-connections/openastro-ap.nmconnection`, or use the AlpacaBridge web portal's WiFi card.
 
 ### Restore Stock Firmware
 
@@ -105,7 +110,8 @@ If you'd prefer to build a custom rootfs instead of using the pre-built image:
 sudo apt install debootstrap qemu-user-static
 
 sudo debootstrap --arch=arm64 \
-  --include=systemd,systemd-sysv,openssh-server,network-manager,dnsmasq-base,sudo,\
+  --include=systemd,systemd-sysv,systemd-timesyncd,openssh-server,network-manager,\
+dnsmasq-base,wpasupplicant,libpam-systemd,polkitd,wireless-regdb,iw,sudo,\
 vim-tiny,less,locales,dbus,iproute2,iputils-ping,wget,curl,\
 ca-certificates,usbutils,pciutils,kmod \
   trixie ../asiair-rootfs http://deb.debian.org/debian
@@ -188,7 +194,7 @@ sudo ./rk-flashtool -h
 ### SSH connection refused after flash
 
 - Wait 30-60 seconds for first boot to complete
-- Try `ssh astro@astro.local` or check your router for the device's IP
+- Try `ssh astro@openastro.local` or check your router for the device's IP
 - If WiFi isn't configured yet, connect via ethernet
 
 ### Need to recover from a bad flash
