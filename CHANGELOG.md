@@ -17,7 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - ZWO HID udev rule (`70-openastro-zwo-hid.rules`, idVendor 03c3, hidraw + hiddev, mode 0666).
   - User `astro` added to hardware-access groups (dialout, plugdev, audio, video, netdev where present).
   - Fleet WiFi conf (`20-openastro-wifi.conf`): powersave off, no scan MAC randomization. NetworkManager manages all interfaces, ethernet included.
-  - AlpacaBridge preinstalled from apt.openastro.net (`INSTALL_ALPACABRIDGE=yes` by default now that 3.4.0 ships the WiFi manager; `ALPACABRIDGE_DEB=<path>` installs a local .deb instead).
+  - AlpacaBridge preinstalled from apt.openastro.net (`INSTALL_ALPACABRIDGE=yes` by default now that 3.4.0 ships the WiFi manager).
 - **WiFi manager prerequisites** per AlpacaBridge `docs/rk3568-image-notes.md`:
   - `polkitd` installed (required: NetworkManager authorizes AlpacaBridge's unprivileged D-Bus calls via polkit).
   - `wireless-regdb` and `iw` installed; `systemd-timesyncd` installed and enabled (the board has no usable RTC and clock drift breaks TLS/apt and Alpaca timestamps).

@@ -274,8 +274,7 @@ sed -i 's/^ccode=.*/ccode=US/' \
 # --- AlpacaBridge (from apt.openastro.net) ---
 # On by default since AlpacaBridge 3.4.0 shipped the WiFi manager. Needs
 # outbound network in the chroot, same as the dnsmasq safety net above.
-# Set INSTALL_ALPACABRIDGE=no to skip, or point ALPACABRIDGE_DEB at a local
-# .deb to install that instead of the apt.openastro.net version.
+# Set INSTALL_ALPACABRIDGE=no to skip.
 INSTALL_ALPACABRIDGE="${INSTALL_ALPACABRIDGE:-yes}"
 if [ "$INSTALL_ALPACABRIDGE" = yes ]; then
     echo "Configuring apt.openastro.net repository..."
@@ -283,9 +282,6 @@ if [ "$INSTALL_ALPACABRIDGE" = yes ]; then
     # gnupg (apt itself never needs it, only the one-time dearmor does).
     # Degrade with a warning on network failure, like the other network-
     # dependent steps above - an offline build must still produce an image.
-    # The repo setup is best-effort even on the local-.deb path (so shipped
-    # units can still apt upgrade later), but only the apt install path
-    # depends on it succeeding.
     repo_ok=0
     if curl -fsSL https://apt.openastro.net/repo/openastro-archive-keyring.gpg \
         | gpg --dearmor --yes -o "$ROOTFS/usr/share/keyrings/openastro-archive-keyring.gpg"; then
@@ -301,16 +297,7 @@ if [ "$INSTALL_ALPACABRIDGE" = yes ]; then
     else
         echo "WARNING: could not fetch the apt.openastro.net keyring"
     fi
-    if [ -n "${ALPACABRIDGE_DEB:-}" ]; then
-        # A local .deb never needs the network - install it regardless of
-        # whether the repo setup above worked.
-        echo "Installing AlpacaBridge from local .deb: $ALPACABRIDGE_DEB"
-        cp "$ALPACABRIDGE_DEB" "$ROOTFS/tmp/alpacabridge.deb"
-        chroot "$ROOTFS" /bin/bash -c \
-            "DEBIAN_FRONTEND=noninteractive apt-get install -y -qq /tmp/alpacabridge.deb >/dev/null" \
-            || echo "WARNING: AlpacaBridge .deb install failed; image will not ship AlpacaBridge"
-        rm -f "$ROOTFS/tmp/alpacabridge.deb"
-    elif [ "$repo_ok" = 1 ]; then
+    if [ "$repo_ok" = 1 ]; then
         echo "Installing AlpacaBridge from apt.openastro.net..."
         chroot "$ROOTFS" /bin/bash -c \
             "DEBIAN_FRONTEND=noninteractive apt-get install -y -qq alpacabridge >/dev/null" \
