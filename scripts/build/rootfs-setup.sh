@@ -144,9 +144,12 @@ STAMP=/var/lib/openastro/ssid-set
 KEYFILE=/etc/NetworkManager/system-connections/openastro-ap.nmconnection
 [ -e "$STAMP" ] && exit 0
 [ -f "$KEYFILE" ] || exit 0
-# wlan0 appears once the bcmdhd module has loaded; give it a moment.
+# wlan0 appears once the bcmdhd module has loaded. Wait up to 60s: a slow
+# firmware load past a short timeout would leave the AP broadcasting the
+# un-suffixed fleet-default SSID for that boot. (Delaying NetworkManager
+# that long on a wlan0-less boot is fine - no wlan0, nothing to manage.)
 i=0
-while [ ! -e /sys/class/net/wlan0/address ] && [ "$i" -lt 30 ]; do
+while [ ! -e /sys/class/net/wlan0/address ] && [ "$i" -lt 120 ]; do
     sleep 0.5; i=$((i + 1))
 done
 [ -e /sys/class/net/wlan0/address ] || exit 0
@@ -280,28 +283,40 @@ if [ "$INSTALL_ALPACABRIDGE" = yes ]; then
     # gnupg (apt itself never needs it, only the one-time dearmor does).
     # Degrade with a warning on network failure, like the other network-
     # dependent steps above - an offline build must still produce an image.
+    # The repo setup is best-effort even on the local-.deb path (so shipped
+    # units can still apt upgrade later), but only the apt install path
+    # depends on it succeeding.
+    repo_ok=0
     if curl -fsSL https://apt.openastro.net/repo/openastro-archive-keyring.gpg \
         | gpg --dearmor --yes -o "$ROOTFS/usr/share/keyrings/openastro-archive-keyring.gpg"; then
-        chroot "$ROOTFS" /bin/bash -c "
+        if chroot "$ROOTFS" /bin/bash -c "
             echo \"deb [arch=\$(dpkg --print-architecture) signed-by=/usr/share/keyrings/openastro-archive-keyring.gpg] https://apt.openastro.net trixie main\" \
                 > /etc/apt/sources.list.d/openastro.list
             apt-get update -qq
-        " || echo "WARNING: apt.openastro.net update failed; AlpacaBridge may not install"
-        if [ -n "${ALPACABRIDGE_DEB:-}" ]; then
-            echo "Installing AlpacaBridge from local .deb: $ALPACABRIDGE_DEB"
-            cp "$ALPACABRIDGE_DEB" "$ROOTFS/tmp/alpacabridge.deb"
-            chroot "$ROOTFS" /bin/bash -c \
-                "DEBIAN_FRONTEND=noninteractive apt-get install -y -qq /tmp/alpacabridge.deb >/dev/null" \
-                || echo "WARNING: AlpacaBridge .deb install failed; image will not ship AlpacaBridge"
-            rm -f "$ROOTFS/tmp/alpacabridge.deb"
+        "; then
+            repo_ok=1
         else
-            echo "Installing AlpacaBridge from apt.openastro.net..."
-            chroot "$ROOTFS" /bin/bash -c \
-                "DEBIAN_FRONTEND=noninteractive apt-get install -y -qq alpacabridge >/dev/null" \
-                || echo "WARNING: AlpacaBridge install failed; image will not ship AlpacaBridge"
+            echo "WARNING: apt.openastro.net update failed"
         fi
     else
-        echo "WARNING: could not fetch the apt.openastro.net keyring; skipping AlpacaBridge install"
+        echo "WARNING: could not fetch the apt.openastro.net keyring"
+    fi
+    if [ -n "${ALPACABRIDGE_DEB:-}" ]; then
+        # A local .deb never needs the network - install it regardless of
+        # whether the repo setup above worked.
+        echo "Installing AlpacaBridge from local .deb: $ALPACABRIDGE_DEB"
+        cp "$ALPACABRIDGE_DEB" "$ROOTFS/tmp/alpacabridge.deb"
+        chroot "$ROOTFS" /bin/bash -c \
+            "DEBIAN_FRONTEND=noninteractive apt-get install -y -qq /tmp/alpacabridge.deb >/dev/null" \
+            || echo "WARNING: AlpacaBridge .deb install failed; image will not ship AlpacaBridge"
+        rm -f "$ROOTFS/tmp/alpacabridge.deb"
+    elif [ "$repo_ok" = 1 ]; then
+        echo "Installing AlpacaBridge from apt.openastro.net..."
+        chroot "$ROOTFS" /bin/bash -c \
+            "DEBIAN_FRONTEND=noninteractive apt-get install -y -qq alpacabridge >/dev/null" \
+            || echo "WARNING: AlpacaBridge install failed; image will not ship AlpacaBridge"
+    else
+        echo "WARNING: apt.openastro.net unavailable; image will not ship AlpacaBridge"
     fi
 fi
 
