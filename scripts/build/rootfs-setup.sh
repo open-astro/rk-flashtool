@@ -315,6 +315,9 @@ if [ "$INSTALL_ALPACABRIDGE" = yes ]; then
     # Degrade with a warning on network failure, like the other network-
     # dependent steps above - an offline build must still produce an image.
     repo_ok=0
+    # Nothing in the minimal rootfs is guaranteed to have created this
+    # directory (no gnupg in the chroot); gpg -o does not create parents.
+    mkdir -p "$ROOTFS/usr/share/keyrings"
     if curl -fsSL https://apt.openastro.net/repo/openastro-archive-keyring.gpg \
         | gpg --dearmor --yes -o "$ROOTFS/usr/share/keyrings/openastro-archive-keyring.gpg"; then
         if chroot "$ROOTFS" /bin/bash -c "
