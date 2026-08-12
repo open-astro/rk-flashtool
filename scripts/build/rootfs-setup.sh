@@ -60,6 +60,22 @@ mount --bind /proc "$ROOTFS/proc"
 mount --bind /sys "$ROOTFS/sys"
 cp /usr/bin/qemu-aarch64-static "$ROOTFS/usr/bin/" 2>/dev/null || true
 
+# --- DNS resolver ---
+# Written BEFORE any chroot apt-get below: a fresh debootstrap target has no
+# resolv.conf, so without this every in-chroot network step (safety-net
+# installs, AlpacaBridge) would silently fail on hostname resolution. This is
+# also the image's runtime resolver config.
+cat > "$ROOTFS/etc/resolv.conf" << 'EOF'
+nameserver 8.8.8.8
+nameserver 1.1.1.1
+EOF
+
+# Debootstrap leaves /var/lib/apt/lists empty, so apt-get install of anything
+# outside the --include list has no index to consult. Best-effort like the
+# installs themselves - offline builds still finish.
+chroot "$ROOTFS" /bin/bash -c "apt-get update -qq" \
+    || echo "WARNING: apt-get update failed; safety-net package installs may fail"
+
 # --- Hostname ---
 echo "openastro" > "$ROOTFS/etc/hostname"
 cat > "$ROOTFS/etc/hosts" << 'EOF'
@@ -326,12 +342,6 @@ fi
 # --- Auto-load pwm_gpio module ---
 mkdir -p "$ROOTFS/etc/modules-load.d"
 echo "pwm_gpio" > "$ROOTFS/etc/modules-load.d/pwm-gpio.conf"
-
-# --- DNS resolver ---
-cat > "$ROOTFS/etc/resolv.conf" << 'EOF'
-nameserver 8.8.8.8
-nameserver 1.1.1.1
-EOF
 
 # --- Cleanup ---
 cleanup_binds

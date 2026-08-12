@@ -226,9 +226,19 @@ configure_wifi_in_image() {
         echo "  Passwords did not match - try again."
     done
 
+    # Two ASCII letters only (ISO 3166-1 alpha-2): anything else would be
+    # rejected by the regdb anyway, and sed-active characters would corrupt
+    # the ccode= substitution below.
     local country
-    read -rp "  WiFi country code [US]: " country
-    country="${country:-US}"
+    while true; do
+        read -rp "  WiFi country code [US]: " country
+        country="${country:-US}"
+        if [[ "$country" =~ ^[A-Za-z]{2}$ ]]; then
+            country="${country^^}"
+            break
+        fi
+        echo "  Country code must be two letters (e.g. US, DE, GB)."
+    done
 
     local mnt
     mnt="$(mktemp -d /tmp/openastro-wifi-mount-XXXXXX)"
