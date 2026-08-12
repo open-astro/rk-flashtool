@@ -43,6 +43,12 @@ else
 fi
 
 # --- Bind mounts for chroot ---
+# ALWAYS undone on exit, error included: a leftover $ROOTFS/dev bind mount is
+# catastrophic - a later "rm -rf $ROOTFS" would descend into the real /dev.
+cleanup_binds() {
+    umount -l "$ROOTFS/sys" "$ROOTFS/proc" "$ROOTFS/dev/pts" "$ROOTFS/dev" 2>/dev/null || true
+}
+trap cleanup_binds EXIT
 mount --bind /dev "$ROOTFS/dev"
 mount --bind /dev/pts "$ROOTFS/dev/pts"
 mount --bind /proc "$ROOTFS/proc"
@@ -299,10 +305,8 @@ nameserver 1.1.1.1
 EOF
 
 # --- Cleanup ---
-umount "$ROOTFS/sys"
-umount "$ROOTFS/proc"
-umount "$ROOTFS/dev/pts"
-umount "$ROOTFS/dev"
+cleanup_binds
+trap - EXIT
 rm -f "$ROOTFS/usr/bin/qemu-aarch64-static"
 [ "$UNMOUNT_STOCK" = "1" ] && umount "$STOCKMNT" && rmdir "$STOCKMNT"
 
