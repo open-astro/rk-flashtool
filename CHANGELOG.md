@@ -17,12 +17,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - ZWO HID udev rule (`70-openastro-zwo-hid.rules`, idVendor 03c3, hidraw + hiddev, mode 0666).
   - User `astro` added to hardware-access groups (dialout, plugdev, audio, video, netdev where present).
   - Fleet WiFi conf (`20-openastro-wifi.conf`): powersave off, no scan MAC randomization. NetworkManager manages all interfaces, ethernet included.
-  - AlpacaBridge preinstall hook from apt.openastro.net, gated behind `INSTALL_ALPACABRIDGE` (default `no` until the next AlpacaBridge release ships).
+  - AlpacaBridge preinstalled from apt.openastro.net (`INSTALL_ALPACABRIDGE=yes` by default now that 3.4.0 ships the WiFi manager; `ALPACABRIDGE_DEB=<path>` installs a local .deb instead).
+- **WiFi manager prerequisites** per AlpacaBridge `docs/rk3568-image-notes.md`:
+  - `polkitd` installed (required: NetworkManager authorizes AlpacaBridge's unprivileged D-Bus calls via polkit).
+  - `wireless-regdb` and `iw` installed; `systemd-timesyncd` installed and enabled (the board has no usable RTC and clock drift breaks TLS/apt and Alpaca timestamps).
+  - Stock nvram `ccode=DE` replaced with `ccode=US` in both firmware locations (DE disallows 5 GHz ch 149-165); the installer's country prompt now also patches nvram `ccode` to match the chosen country.
 
 ### Changed
 - **Hostname is now `openastro`** (was `astro`); connect with `ssh astro@openastro.local`.
 - **SSH root login disabled**; use `astro` + sudo.
-- **Hotspot aligned with the OpenAstro fleet defaults**: 5 GHz channel 36, unit pinned at 172.24.1.1/24, autoconnect-priority -10 with no retries. The installer prompt now defaults to SSID `OpenAstro-XXXX` and password `12345678` on empty input instead of requiring custom values. 5 GHz on the stock bcmdhd driver is pending hardware validation.
+- **Hotspot aligned with the OpenAstro fleet defaults**: 5 GHz channel 36, unit pinned at 172.24.1.1/24, autoconnect-priority -10 with no retries. The installer prompt now defaults to SSID `OpenAstro-XXXX` and password `12345678` on empty input instead of requiring custom values. 5 GHz AP mode on the stock bcmdhd driver was validated on hardware 2026-08-09 (AP-ENABLED at 5180 MHz).
 
 ### Fixed
 - **Installer no longer destroys an existing stock backup** (`scripts/install`)

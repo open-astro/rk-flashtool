@@ -87,6 +87,16 @@ EOF
 [device]
 wifi.country=$country
 EOF
+        # The bcmdhd firmware applies its own country from the nvram ccode=
+        # line, independent of the kernel regdom - keep both in sync or the
+        # radio may disallow channels the user's market permits (the stock
+        # nvram ships ccode=DE; see AlpacaBridge docs/rk3568-image-notes.md).
+        local nv
+        for nv in "$mnt/lib/firmware/nvram_ap6256.txt" \
+                  "$mnt/vendor/etc/firmware/nvram_ap6256.txt" \
+                  "$mnt/vendor/etc/firmware/nvram.txt"; do
+            [ -f "$nv" ] && sed -i "s/^ccode=.*/ccode=$country/" "$nv"
+        done
     fi
 }
 

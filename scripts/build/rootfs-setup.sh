@@ -198,6 +198,32 @@ if [ ! -x "$ROOTFS/usr/sbin/dnsmasq" ]; then
         || echo "WARNING: could not install dnsmasq-base - the WiFi hotspot will not hand out IPs."
 fi
 
+# --- WiFi manager dependencies (AlpacaBridge docs/rk3568-image-notes.md) ---
+# polkitd:        REQUIRED - NM authorizes D-Bus callers via polkit; without it
+#                 AlpacaBridge's packaged polkit rule does nothing and the
+#                 unprivileged alpacabridge user cannot manage WiFi.
+# wireless-regdb: the kernel otherwise logs "Direct firmware load for
+#                 regulatory.db failed" and falls back to the world regdom.
+# iw:             field diagnostics (works unprivileged on this driver).
+# Normally present from the debootstrap --include list; safety net like above.
+for pkg in polkitd wireless-regdb iw; do
+    if ! chroot "$ROOTFS" dpkg -s "$pkg" >/dev/null 2>&1; then
+        echo "Installing $pkg..."
+        chroot "$ROOTFS" /bin/bash -c "DEBIAN_FRONTEND=noninteractive apt-get install -y $pkg" \
+            || echo "WARNING: could not install $pkg."
+    fi
+done
+
+# --- Time sync ---
+# The board has no usable RTC and the stock image shipped no NTP daemon; the
+# clock drifting breaks TLS (apt) and Alpaca timestamps. systemd-timesyncd is
+# in the debootstrap --include list; enable it (safety-net install like above).
+if ! chroot "$ROOTFS" dpkg -s systemd-timesyncd >/dev/null 2>&1; then
+    chroot "$ROOTFS" /bin/bash -c "DEBIAN_FRONTEND=noninteractive apt-get install -y systemd-timesyncd" \
+        || echo "WARNING: could not install systemd-timesyncd."
+fi
+chroot "$ROOTFS" /bin/bash -c "systemctl enable systemd-timesyncd" || true
+
 # --- Install stock kernel modules (4.19.219) ---
 echo "Installing stock kernel modules..."
 rm -rf "$ROOTFS/lib/modules/"*
@@ -224,21 +250,40 @@ cp "$FW_SRC/nvram_ap6256.txt"            "$FW_DST/nvram.txt"
 cp "$FW_SRC/nvram_ap6256.txt"            "$FW_DST/nvram_ap6256.txt"
 cp "$FW_SRC/BCM4345C5.hcd"              "$FW_DST/BCM4345C5.hcd"
 
+# The stock nvram hardcodes ccode=DE, which disallows 5 GHz ch 149-165 that US
+# users should have. Default to US to match the other OpenAstro images; the
+# runtime regulatory domain is user-selectable in the AlpacaBridge WiFi card
+# (docs/rk3568-image-notes.md item 3).
+sed -i 's/^ccode=.*/ccode=US/' \
+    "$ROOTFS/lib/firmware/nvram_ap6256.txt" \
+    "$FW_DST/nvram_ap6256.txt" "$FW_DST/nvram.txt"
+
 # --- AlpacaBridge (from apt.openastro.net) ---
-# Temporarily off by default: waiting on the next AlpacaBridge release
-# (new WiFi module). Flip to yes once it ships. Needs outbound network in
-# the chroot, same as the dnsmasq safety net above.
-INSTALL_ALPACABRIDGE="${INSTALL_ALPACABRIDGE:-no}"
+# On by default since AlpacaBridge 3.4.0 shipped the WiFi manager. Needs
+# outbound network in the chroot, same as the dnsmasq safety net above.
+# Set INSTALL_ALPACABRIDGE=no to skip, or point ALPACABRIDGE_DEB at a local
+# .deb to install that instead of the apt.openastro.net version.
+INSTALL_ALPACABRIDGE="${INSTALL_ALPACABRIDGE:-yes}"
 if [ "$INSTALL_ALPACABRIDGE" = yes ]; then
-    echo "Installing AlpacaBridge from apt.openastro.net..."
+    echo "Configuring apt.openastro.net repository..."
     chroot "$ROOTFS" /bin/bash -c "
         curl -fsSL https://apt.openastro.net/repo/openastro-archive-keyring.gpg \
             | gpg --dearmor --yes -o /usr/share/keyrings/openastro-archive-keyring.gpg
         echo \"deb [arch=\$(dpkg --print-architecture) signed-by=/usr/share/keyrings/openastro-archive-keyring.gpg] https://apt.openastro.net trixie main\" \
             > /etc/apt/sources.list.d/openastro.list
         apt-get update -qq
-        DEBIAN_FRONTEND=noninteractive apt-get install -y -qq alpacabridge >/dev/null
     "
+    if [ -n "${ALPACABRIDGE_DEB:-}" ]; then
+        echo "Installing AlpacaBridge from local .deb: $ALPACABRIDGE_DEB"
+        cp "$ALPACABRIDGE_DEB" "$ROOTFS/tmp/alpacabridge.deb"
+        chroot "$ROOTFS" /bin/bash -c \
+            "DEBIAN_FRONTEND=noninteractive apt-get install -y -qq /tmp/alpacabridge.deb >/dev/null"
+        rm -f "$ROOTFS/tmp/alpacabridge.deb"
+    else
+        echo "Installing AlpacaBridge from apt.openastro.net..."
+        chroot "$ROOTFS" /bin/bash -c \
+            "DEBIAN_FRONTEND=noninteractive apt-get install -y -qq alpacabridge >/dev/null"
+    fi
 fi
 
 # --- Auto-load pwm_gpio module ---

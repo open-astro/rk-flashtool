@@ -76,7 +76,7 @@ ssh astro@openastro.local
 
 **Change the default password immediately:** `passwd`
 
-> **Pending hardware validation:** the hotspot now uses 5 GHz channel 36 (matching the other OpenAstro boards). This has not yet been verified on ASIAIR hardware with the stock bcmdhd driver - if the hotspot does not appear, switch the profile to 2.4 GHz (`band=bg`, `channel=6`) in `/etc/NetworkManager/system-connections/openastro-ap.nmconnection` and report it.
+> The hotspot uses 5 GHz channel 36 (matching the other OpenAstro boards), verified working on ASIAIR hardware with the stock bcmdhd driver (2026-08-09 live test, `AP-ENABLED` at 5180 MHz). If your regulatory domain disallows it, switch the profile to 2.4 GHz (`band=bg`, `channel=6`) in `/etc/NetworkManager/system-connections/openastro-ap.nmconnection`, or use the AlpacaBridge web portal's WiFi card.
 
 ### Restore Stock Firmware
 
@@ -107,7 +107,8 @@ If you'd prefer to build a custom rootfs instead of using the pre-built image:
 sudo apt install debootstrap qemu-user-static
 
 sudo debootstrap --arch=arm64 \
-  --include=systemd,systemd-sysv,openssh-server,network-manager,dnsmasq-base,sudo,\
+  --include=systemd,systemd-sysv,systemd-timesyncd,openssh-server,network-manager,\
+dnsmasq-base,polkitd,wireless-regdb,iw,sudo,\
 vim-tiny,less,locales,dbus,iproute2,iputils-ping,wget,curl,\
 ca-certificates,usbutils,pciutils,kmod \
   trixie ../asiair-rootfs http://deb.debian.org/debian
