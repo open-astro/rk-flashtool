@@ -232,6 +232,10 @@ chroot "$ROOTFS" /bin/bash -c "systemctl enable systemd-timesyncd" || true
 
 # --- Install stock kernel modules (4.19.219) ---
 echo "Installing stock kernel modules..."
+# debootstrap installs no kernel, so /lib/modules may not exist; without it
+# cp -a would create lib/modules AS the 4.19.219 dir (flattened, modprobe
+# then finds nothing and WiFi never comes up).
+mkdir -p "$ROOTFS/lib/modules"
 rm -rf "$ROOTFS/lib/modules/"*
 cp -a "$STOCKMNT/lib/modules/4.19.219" "$ROOTFS/lib/modules/"
 rm -f "$ROOTFS/lib/modules/4.19.219/build"
