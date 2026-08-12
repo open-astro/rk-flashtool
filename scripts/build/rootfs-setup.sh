@@ -128,7 +128,7 @@ ConditionPathExists=!/etc/ssh/ssh_host_ed25519_key
 
 [Service]
 Type=oneshot
-ExecStart=/usr/sbin/ssh-keygen -A
+ExecStart=/usr/bin/ssh-keygen -A
 
 [Install]
 WantedBy=multi-user.target
