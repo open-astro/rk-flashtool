@@ -18,10 +18,10 @@ if [ -z "$LOADER" ]; then
     fi
 fi
 CLEANUP_TMP=""
+IMAGES_DIR="$REPODIR/images"
 # shellcheck source=lib/release.sh
 . "$REPODIR/scripts/lib/release.sh"
-resolve_release
-IMAGES_DIR="$REPODIR/images"
+resolve_release "$IMAGES_DIR"
 
 # Search order for rootfs image: arg > current-release cache in images/ > ../asiair-image/
 find_rootfs() {

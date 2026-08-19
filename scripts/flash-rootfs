@@ -11,10 +11,10 @@ REPODIR="$(cd "$(dirname "$0")/.." && pwd)"
 TOOL="$REPODIR/rk-flashtool"
 # shellcheck source=lib/wifi.sh
 . "$REPODIR/scripts/lib/wifi.sh"
+IMAGES_DIR="$REPODIR/images"
 # shellcheck source=lib/release.sh
 . "$REPODIR/scripts/lib/release.sh"
-resolve_release
-IMAGES_DIR="$REPODIR/images"
+resolve_release "$IMAGES_DIR"
 
 # pick_workdir() is provided by scripts/lib/wifi.sh (sourced above).
 

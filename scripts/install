@@ -25,7 +25,7 @@ JAILBREAK_DIR="$REPODIR/jailbreak"
 IMAGES_DIR="$REPODIR/images"
 # shellcheck source=lib/release.sh
 . "$REPODIR/scripts/lib/release.sh"
-resolve_release
+resolve_release "$IMAGES_DIR"
 CLEANUP_TMP=""
 FLASH_ONLY=false
 REBACKUP=false
