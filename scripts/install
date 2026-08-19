@@ -295,14 +295,17 @@ if [ -z "$ROOTFS_IMG" ]; then
     echo ""
     mkdir -p "$IMAGES_DIR"
     local_dest="$IMAGES_DIR/astrolinux-trixie-rk3568-$RELEASE_TAG.img.gz"
+    # Download to .part and rename on success so an interrupted download
+    # can never be mistaken for a complete cached image.
     if command -v wget >/dev/null 2>&1; then
-        wget -O "$local_dest" "$RELEASE_URL" || { rm -f "$local_dest"; echo "Download failed."; exit 1; }
+        wget -O "$local_dest.part" "$RELEASE_URL" || { rm -f "$local_dest.part"; echo "Download failed."; exit 1; }
     elif command -v curl >/dev/null 2>&1; then
-        curl -fL -o "$local_dest" "$RELEASE_URL" || { rm -f "$local_dest"; echo "Download failed."; exit 1; }
+        curl -fL -o "$local_dest.part" "$RELEASE_URL" || { rm -f "$local_dest.part"; echo "Download failed."; exit 1; }
     else
         echo "ERROR: wget or curl required."
         exit 1
     fi
+    mv "$local_dest.part" "$local_dest"
     ROOTFS_IMG="$local_dest"
     echo ""
     echo "Downloaded: $(du -h "$ROOTFS_IMG" | cut -f1)"
