@@ -7,7 +7,10 @@
 # usage: openastro-beep [volume_percent]   (default 10, max 50)
 use strict;
 use warnings;
-use Time::HiRes qw(usleep);
+
+# Sub-second sleep via 4-arg select: works with Debian's perl-base (the
+# minimal image has no Time::HiRes).
+sub msleep { select(undef, undef, undef, $_[0] / 1000); }
 
 use constant {
     DEV            => '/dev/pwm-gpio-misc',
@@ -49,7 +52,7 @@ for my $note (@tune) {
     ioctl($fd, SET_CONFIG, $buf) or warn "set config: $!\n";
     my $en = pack('l', BUZZER_IDX);
     ioctl($fd, PWM_ENABLE, $en) or warn "pwm enable: $!\n";
-    usleep($ms * 1000);
+    msleep($ms);
 }
 
 my $off_buf = pack('lll', BUZZER_IDX, 1_000_000, 0);
