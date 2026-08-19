@@ -21,7 +21,6 @@ CLEANUP_TMP=""
 IMAGES_DIR="$REPODIR/images"
 # shellcheck source=lib/release.sh
 . "$REPODIR/scripts/lib/release.sh"
-resolve_release "$IMAGES_DIR"
 
 # Search order for rootfs image: arg > current-release cache in images/ > ../asiair-image/
 find_rootfs() {
@@ -56,9 +55,13 @@ download_rootfs() {
     echo "$dest"
 }
 
-ROOTFS_ARG="${1:-$(find_rootfs)}"
-if [ -z "$ROOTFS_ARG" ]; then
-    ROOTFS_ARG="$(download_rootfs)"
+# An explicit image path skips release resolution entirely (no network).
+if [ -n "$1" ]; then
+    ROOTFS_ARG="$1"
+else
+    resolve_release "$IMAGES_DIR"
+    ROOTFS_ARG="$(find_rootfs)"
+    [ -n "$ROOTFS_ARG" ] || ROOTFS_ARG="$(download_rootfs)"
 fi
 
 if [ ! -x "$TOOL" ]; then

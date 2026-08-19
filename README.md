@@ -58,6 +58,8 @@ The installer handles everything automatically:
 
 Total time: ~15 minutes (mostly waiting for the backup transfer).
 
+> The install/flash scripts check GitHub for the latest OpenAstro release on startup (a quick probe, capped at 15 seconds). When offline they fall back to the newest image already downloaded to `images/`; passing an image path explicitly (`sudo scripts/flash-rootfs path/to/image.img.gz`) skips the check entirely.
+
 ### 4. First Boot
 
 The device reboots automatically after flashing. Disconnect USB and wait about 60 seconds.
