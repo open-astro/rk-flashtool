@@ -351,6 +351,27 @@ fi
 mkdir -p "$ROOTFS/etc/modules-load.d"
 echo "pwm_gpio" > "$ROOTFS/etc/modules-load.d/pwm-gpio.conf"
 
+# --- Buzzer: OpenAstro jingle on boot ---
+# The AirPlus piezo is index 3 (GPIO0_B7) behind ZWO's pwm_gpio driver;
+# see hardware/asiair-plus-rk3568-256g/pwm_gpio.h. Same jingle as the
+# ASIAIR Pro image, played via /dev/pwm-gpio-misc ioctls (period = pitch,
+# duty = volume) - verified live against stock firmware behavior.
+install -m 755 "$REPODIR/scripts/build/openastro-beep" \
+    "$ROOTFS/usr/local/sbin/openastro-beep"
+cat > "$ROOTFS/etc/systemd/system/openastro-beep.service" << 'EOF'
+[Unit]
+Description=OpenAstro: boot-ready jingle on the ASIAIR Plus buzzer
+After=NetworkManager.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/openastro-beep
+
+[Install]
+WantedBy=multi-user.target
+EOF
+chroot "$ROOTFS" /bin/bash -c "systemctl enable openastro-beep.service" >/dev/null 2>&1
+
 # --- Cleanup ---
 cleanup_binds
 trap - EXIT

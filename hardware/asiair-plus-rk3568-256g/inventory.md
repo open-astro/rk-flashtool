@@ -129,7 +129,23 @@ The ASIAIR user-space apps (`zwoair_imager`, `zwoair_guider`) control ports thro
 | 0     | 29    | GPIO0_D5   | out | hi    | **Network/status LED** (pinctrl: `led-network`) |
 | 1     | 30    | GPIO0_D6   | out | lo    | **Status LED** (4th LED in D3-D6 cluster)       |
 | 2     | 5     | GPIO0_A5   | in  | hi    | **Physical button input** (pinctrl: `airplus-keys`) |
-| 3     | 15    | GPIO0_B7   | out | lo    | **DC master enable or control signal**           |
+| 3     | 15    | GPIO0_B7   | out | lo    | **Piezo buzzer** (PWM mode; period = 1/freq, duty = volume) |
+
+Index 3 buzzer, verified live on stock firmware (2026-08-18): triggering the
+stock beep (`{"id":14,"method":"set_setting","params":{"beep_sec":1}}` to
+zwoair_imager on localhost:4700) drives index 3 in PWM mode at
+period_ns=1000000 (1 kHz), duty_ns=40000 (duty = volume; log line:
+`[Write]gpio(BCM 19) pwm: 40/1000`). The imager addresses GPIOs by Pi BCM
+number and maps them via an internal table: BCM 21->idx1, 20->idx0, 3->idx2,
+19->idx3 (buzzer), 12->idx4, 13->idx5, 26->idx6, 18->idx7 - which
+cross-validates the DC-port mapping above.
+
+Required ioctl sequence (order matters; enable latches the config):
+SET_MODE(idx3, PWM) -> SET_CONFIG(period, duty) -> PWM_ENABLE(idx3);
+stop with SET_CONFIG(duty=0) or PWM_DISABLE. See pwm_gpio.h - the ioctl
+command numbers there were corrected on 2026-08-18 (enable=0x40044305,
+disable=0x40044306, set_mode=0x40084302, set_level=0x40084308). A working
+jingle player lives at scripts/build/openastro-beep (Perl, no deps).
 
 ### Group 2: DC Power Port PWM/Variable Control (GPIO4, indices 4-7)
 

@@ -1,0 +1,59 @@
+#!/usr/bin/perl
+# OpenAstro jingle on the ASIAIR Plus (RK3568) buzzer.
+#
+# Buzzer: index 3 (GPIO0_B7) behind ZWO's pwm_gpio driver at
+# /dev/pwm-gpio-misc. PWM period sets pitch, duty cycle sets volume.
+#
+# usage: openastro-beep [volume_percent]   (default 10, max 50)
+use strict;
+use warnings;
+use Time::HiRes qw(usleep);
+
+use constant {
+    DEV            => '/dev/pwm-gpio-misc',
+    SET_CONFIG     => 0x400c4304,   # pwm_param_t { index, period_ns, duty_ns }
+    SET_MODE       => 0x40084302,   # work_mode_t { index, mode }
+    PWM_ENABLE     => 0x40044305,   # int index
+    PWM_DISABLE    => 0x40044306,   # int index
+    BUZZER_IDX     => 3,
+    MODE_PWM       => 2,
+};
+
+my $vol = @ARGV ? int($ARGV[0]) : 10;
+$vol = 1  if $vol < 1;
+$vol = 50 if $vol > 50;   # 50% duty = max piezo volume
+
+# (freq_hz, duration_ms) - 0 freq = rest
+# "O-pen-As-tro!" rising motif, then a little starlight trill
+my @tune = (
+    [523, 120], [0, 30],    # C5  O-
+    [659, 120], [0, 30],    # E5  pen
+    [784, 120], [0, 30],    # G5  As-
+    [1047, 220], [0, 80],   # C6  tro!
+    [1319, 70], [1568, 70], [2093, 180],  # E6 G6 C7 sparkle
+);
+
+open(my $fd, '+<', DEV) or die "open " . DEV . ": $!\n";
+
+my $mode_buf = pack('ll', BUZZER_IDX, MODE_PWM);
+ioctl($fd, SET_MODE, $mode_buf) or warn "set mode: $!\n";
+
+for my $note (@tune) {
+    my ($hz, $ms) = @$note;
+    my ($period, $duty) = (1_000_000, 0);   # rest: valid period, duty 0
+    if ($hz > 0) {
+        $period = int(1_000_000_000 / $hz);
+        $duty   = int($period * $vol / 100);
+    }
+    my $buf = pack('lll', BUZZER_IDX, $period, $duty);
+    ioctl($fd, SET_CONFIG, $buf) or warn "set config: $!\n";
+    my $en = pack('l', BUZZER_IDX);
+    ioctl($fd, PWM_ENABLE, $en) or warn "pwm enable: $!\n";
+    usleep($ms * 1000);
+}
+
+my $off_buf = pack('lll', BUZZER_IDX, 1_000_000, 0);
+ioctl($fd, SET_CONFIG, $off_buf);
+my $dis_buf = pack('l', BUZZER_IDX);
+ioctl($fd, PWM_DISABLE, $dis_buf);
+close($fd);
