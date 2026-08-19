@@ -19,13 +19,18 @@ resolve_release() {
                -o /dev/null -w '%{url_effective}' "$latest_url" 2>/dev/null \
                | sed -n 's#.*/tag/##p')"
     elif command -v wget >/dev/null 2>&1; then
-        tag="$(wget --timeout=5 --tries=1 --max-redirect=0 -O /dev/null -S \
+        # wget's --timeout bounds each phase (DNS/connect/read), not total
+        # wall-clock time; wrap in coreutils timeout for a hard 15s cap.
+        local wget_cmd="wget"
+        command -v timeout >/dev/null 2>&1 && wget_cmd="timeout 15 wget"
+        tag="$($wget_cmd --timeout=5 --tries=1 --max-redirect=0 -O /dev/null -S \
                "$latest_url" 2>&1 \
                | sed -n 's#.*[Ll]ocation: .*/tag/\([^ ]*\).*#\1#p' | head -n1)"
     fi
-    # Only accept a sane tag (v + digits/dots); anything else means resolution failed.
+    # Only accept a sane tag: v + digit, then digits/dots/hyphens/alphanumerics
+    # (covers pre-release tags like v1.3.0-rc1); anything else = failed resolution.
     case "$tag" in
-        v[0-9]*) case "$tag" in *[!v0-9.]*) tag="" ;; esac ;;
+        v[0-9]*) case "$tag" in *[!v0-9A-Za-z.-]*) tag="" ;; esac ;;
         *) tag="" ;;
     esac
 
