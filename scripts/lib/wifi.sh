@@ -47,8 +47,9 @@ _wifi_write_profile() {
     # mode=ap makes wlan0 a hotspot; ipv4 method=shared runs DHCP + NAT so
     # clients get an address (172.24.1.x) and reach the unit at 172.24.1.1.
     # 5 GHz channel 36 and the 172.24.1.1/24 pin match the other OpenAstro
-    # boards; priority -10 / retries 0 keep a future client-mode connection
-    # preferred without NM burning retries on the AP profile.
+    # boards. priority -10 keeps a future client-mode connection preferred;
+    # autoconnect-retries=0 means "retry forever" in NetworkManager (not "no
+    # retries"), so the AP profile stays an always-available fallback.
     cat > "$dir/openastro-ap.nmconnection" << EOF
 [connection]
 id=$ssid
@@ -87,6 +88,16 @@ EOF
 [device]
 wifi.country=$country
 EOF
+        # The bcmdhd firmware applies its own country from the nvram ccode=
+        # line, independent of the kernel regdom - keep both in sync or the
+        # radio may disallow channels the user's market permits (the stock
+        # nvram ships ccode=DE; see AlpacaBridge docs/rk3568-image-notes.md).
+        local nv
+        for nv in "$mnt/lib/firmware/nvram_ap6256.txt" \
+                  "$mnt/vendor/etc/firmware/nvram_ap6256.txt" \
+                  "$mnt/vendor/etc/firmware/nvram.txt"; do
+            [ -f "$nv" ] && sed -i "s/^ccode=.*/ccode=$country/" "$nv"
+        done
     fi
 }
 
@@ -199,6 +210,9 @@ configure_wifi_in_image() {
         read -rsp "  Hotspot password [12345678]: " psk; echo ""
         if [ -z "$psk" ]; then
             psk="12345678"
+            echo "  WARNING: using the fleet-default password 12345678. It is"
+            echo "  public knowledge - anyone in WiFi range can join this hotspot."
+            echo "  Set a custom password if the unit operates around strangers."
             break
         elif [ ${#psk} -lt 8 ]; then
             echo "  WPA passwords must be at least 8 characters."
@@ -212,9 +226,19 @@ configure_wifi_in_image() {
         echo "  Passwords did not match - try again."
     done
 
+    # Two ASCII letters only (ISO 3166-1 alpha-2): anything else would be
+    # rejected by the regdb anyway, and sed-active characters would corrupt
+    # the ccode= substitution below.
     local country
-    read -rp "  WiFi country code [US]: " country
-    country="${country:-US}"
+    while true; do
+        read -rp "  WiFi country code [US]: " country
+        country="${country:-US}"
+        if [[ "$country" =~ ^[A-Za-z]{2}$ ]]; then
+            country="${country^^}"
+            break
+        fi
+        echo "  Country code must be two letters (e.g. US, DE, GB)."
+    done
 
     local mnt
     mnt="$(mktemp -d /tmp/openastro-wifi-mount-XXXXXX)"
