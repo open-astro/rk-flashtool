@@ -1,6 +1,13 @@
 #!/bin/bash
 set -e
 
+# Everything below needs root (raw USB flashing, loop-mounting the image).
+if [ "$(id -u)" -ne 0 ]; then
+    echo "ERROR: this script must be run as root:" >&2
+    echo "  sudo $0 $*" >&2
+    exit 1
+fi
+
 # OpenAstro Linux Installer
 # One-script setup: jailbreak → backup → download image → flash rootfs.
 #
@@ -10,11 +17,12 @@ set -e
 #   sudo scripts/install              # full: jailbreak + backup + download + flash
 #   sudo scripts/install --flash-only # skip jailbreak/backup (already have a backup)
 #   sudo scripts/install --rebackup   # force a fresh backup even if one exists
-#   sudo scripts/install --no-wifi    # skip the WiFi hotspot prompt (headless)
+#   sudo scripts/install --no-wifi    # skip the WiFi hotspot setup (wired only)
 #
 # An existing stock backup is never overwritten unless --rebackup is given, so
 # re-running after flashing can't destroy your only path back to stock.
-# The WiFi prompt can also be skipped non-interactively with OPENASTRO_WIFI=no.
+# The hotspot (on by default) can also be skipped with OPENASTRO_WIFI=no, or
+# customized via OPENASTRO_SSID / OPENASTRO_PSK / OPENASTRO_COUNTRY.
 
 REPODIR="$(cd "$(dirname "$0")/.." && pwd)"
 TOOL="$REPODIR/rk-flashtool"
@@ -295,14 +303,17 @@ if [ -z "$ROOTFS_IMG" ]; then
     echo ""
     mkdir -p "$IMAGES_DIR"
     local_dest="$IMAGES_DIR/astrolinux-trixie-rk3568-$RELEASE_TAG.img.gz"
+    # Download to .part and rename on success so an interrupted download
+    # can never be mistaken for a complete cached image.
     if command -v wget >/dev/null 2>&1; then
-        wget -O "$local_dest" "$RELEASE_URL" || { rm -f "$local_dest"; echo "Download failed."; exit 1; }
+        wget -O "$local_dest.part" "$RELEASE_URL" || { rm -f "$local_dest.part"; echo "Download failed."; exit 1; }
     elif command -v curl >/dev/null 2>&1; then
-        curl -fL -o "$local_dest" "$RELEASE_URL" || { rm -f "$local_dest"; echo "Download failed."; exit 1; }
+        curl -fL -o "$local_dest.part" "$RELEASE_URL" || { rm -f "$local_dest.part"; echo "Download failed."; exit 1; }
     else
         echo "ERROR: wget or curl required."
         exit 1
     fi
+    mv "$local_dest.part" "$local_dest"
     ROOTFS_IMG="$local_dest"
     echo ""
     echo "Downloaded: $(du -h "$ROOTFS_IMG" | cut -f1)"

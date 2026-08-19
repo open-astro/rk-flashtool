@@ -1,6 +1,13 @@
 #!/bin/bash
 set -e
 
+# Everything below needs root (raw USB flashing, loop-mounting the image).
+if [ "$(id -u)" -ne 0 ]; then
+    echo "ERROR: this script must be run as root:" >&2
+    echo "  sudo $0 $*" >&2
+    exit 1
+fi
+
 # Flash OpenAstro Linux to ASIAIR Plus.
 # Restores stock boot chain (bootloader + kernel) and writes the OpenAstro Linux
 # rootfs image to p7. Stock partition table is preserved.
@@ -30,28 +37,32 @@ find_rootfs() {
             [ -f "${p}${ext}" ] && echo "${p}${ext}" && return
         done
     done
+    return 0  # no image found is not an error (set -e); caller checks for empty output
 }
 
 # Download image from GitHub Releases if not found locally
 download_rootfs() {
     mkdir -p "$IMAGES_DIR"
     local dest="$IMAGES_DIR/astrolinux-trixie-rk3568-$RELEASE_TAG.img.gz"
-    echo "OpenAstro Linux $RELEASE_TAG image not found locally. Downloading..."
-    echo "  $RELEASE_URL"
-    echo ""
+    echo "OpenAstro Linux $RELEASE_TAG image not found locally. Downloading..." >&2
+    echo "  $RELEASE_URL" >&2
+    echo "" >&2
+    # Download to .part and rename on success so an interrupted download
+    # can never be mistaken for a complete cached image.
     if command -v wget >/dev/null 2>&1; then
-        wget -O "$dest" "$RELEASE_URL"
+        wget -O "$dest.part" "$RELEASE_URL" || { rm -f "$dest.part"; echo "Download failed." >&2; exit 1; }
     elif command -v curl >/dev/null 2>&1; then
-        curl -L -o "$dest" "$RELEASE_URL"
+        curl -fL -o "$dest.part" "$RELEASE_URL" || { rm -f "$dest.part"; echo "Download failed." >&2; exit 1; }
     else
-        echo "ERROR: wget or curl required to download the image."
-        echo "Install one, or download manually:"
-        echo "  mkdir -p images"
-        echo "  wget -O images/astrolinux-trixie-rk3568-$RELEASE_TAG.img.gz $RELEASE_URL"
+        echo "ERROR: wget or curl required to download the image." >&2
+        echo "Install one, or download manually:" >&2
+        echo "  mkdir -p images" >&2
+        echo "  wget -O images/astrolinux-trixie-rk3568-$RELEASE_TAG.img.gz $RELEASE_URL" >&2
         exit 1
     fi
-    echo ""
-    echo "Downloaded: $dest ($(du -h "$dest" | cut -f1))"
+    mv "$dest.part" "$dest"
+    echo "" >&2
+    echo "Downloaded: $dest ($(du -h "$dest" | cut -f1))" >&2
     echo "$dest"
 }
 

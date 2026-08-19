@@ -159,86 +159,77 @@ configure_wifi_in_image() {
             ;;
     esac
 
-    echo ""
-    echo "========================================"
-    echo "  WiFi hotspot setup"
-    echo "========================================"
-    echo ""
-    echo "The unit can broadcast its own WiFi network that you join from a phone"
-    echo "or laptop to connect to it directly (like the stock ASIAIR hotspot)."
-    echo ""
-    echo "Skip this if you only connect over the wired Ethernet port."
-    echo ""
-
-    local use_wifi
-    read -rp "Set up the built-in WiFi hotspot now? [y/N] " use_wifi
-    case "$use_wifi" in
-        [yY]*) ;;
-        *)
-            echo "Leaving WiFi off - use the wired Ethernet port to connect."
-            return 0
-            ;;
-    esac
-
     if [ "$(id -u)" -ne 0 ]; then
         echo "ERROR: configuring WiFi requires root (re-run with sudo)."
         return 1
     fi
 
-    # Empty input takes the OpenAstro defaults: SSID OpenAstro-XXXX (XXXX =
-    # last 4 hex of the wlan0 MAC, applied on first boot by openastro-ssid)
-    # and password 12345678, matching the other OpenAstro boards.
+    # The hotspot is enabled by default with the fleet defaults, matching the
+    # other OpenAstro boards (CM4 / Orange Pi / Raspberry Pi images bake it in
+    # at build time): SSID OpenAstro-XXXX (XXXX = last 4 hex of the wlan0 MAC,
+    # applied on first boot by openastro-ssid), password 12345678, country US.
+    # Users change it later from the AlpacaBridge portal's WiFi card.
+    #
+    # Overrides for scripted installs:
+    #   OPENASTRO_WIFI=no       skip the hotspot entirely (handled above)
+    #   OPENASTRO_SSID=<name>   custom SSID (no -XXXX suffix appended)
+    #   OPENASTRO_PSK=<pass>    custom WPA password (8+ chars)
+    #   OPENASTRO_COUNTRY=<CC>  ISO 3166-1 alpha-2 regulatory domain
     #
     # Reject control characters (incl. a stray CR from CRLF input): they would
     # silently corrupt the NetworkManager keyfile, which is line-oriented INI.
-    local ssid="" custom_ssid=0
-    while true; do
-        read -rp "  Hotspot name (SSID) [OpenAstro-XXXX, XXXX from WiFi MAC]: " ssid
-        if [ -z "$ssid" ]; then
-            ssid="OpenAstro"
-            break
-        elif [[ "$ssid" == *[[:cntrl:]]* ]]; then
-            echo "  SSID contains invalid (control) characters."
-        else
-            custom_ssid=1
-            break
+    local ssid custom_ssid=0
+    if [ -n "${OPENASTRO_SSID:-}" ]; then
+        if [[ "$OPENASTRO_SSID" == *[[:cntrl:]]* ]]; then
+            echo "ERROR: OPENASTRO_SSID contains invalid (control) characters."
+            return 1
         fi
-    done
+        ssid="$OPENASTRO_SSID"
+        custom_ssid=1
+    else
+        ssid="OpenAstro"
+    fi
 
-    local psk="" psk2=""
-    while true; do
-        read -rsp "  Hotspot password [12345678]: " psk; echo ""
-        if [ -z "$psk" ]; then
-            psk="12345678"
-            echo "  WARNING: using the fleet-default password 12345678. It is"
-            echo "  public knowledge - anyone in WiFi range can join this hotspot."
-            echo "  Set a custom password if the unit operates around strangers."
-            break
-        elif [ ${#psk} -lt 8 ]; then
-            echo "  WPA passwords must be at least 8 characters."
-            continue
-        elif [[ "$psk" == *[[:cntrl:]]* ]]; then
-            echo "  Password contains invalid (control) characters."
-            continue
+    local psk
+    if [ -n "${OPENASTRO_PSK:-}" ]; then
+        if [ ${#OPENASTRO_PSK} -lt 8 ]; then
+            echo "ERROR: OPENASTRO_PSK must be at least 8 characters (WPA)."
+            return 1
+        elif [[ "$OPENASTRO_PSK" == *[[:cntrl:]]* ]]; then
+            echo "ERROR: OPENASTRO_PSK contains invalid (control) characters."
+            return 1
         fi
-        read -rsp "  Confirm password: " psk2; echo ""
-        [ "$psk" = "$psk2" ] && break
-        echo "  Passwords did not match - try again."
-    done
+        psk="$OPENASTRO_PSK"
+    else
+        psk="12345678"
+    fi
 
     # Two ASCII letters only (ISO 3166-1 alpha-2): anything else would be
     # rejected by the regdb anyway, and sed-active characters would corrupt
     # the ccode= substitution below.
-    local country
-    while true; do
-        read -rp "  WiFi country code [US]: " country
-        country="${country:-US}"
-        if [[ "$country" =~ ^[A-Za-z]{2}$ ]]; then
-            country="${country^^}"
-            break
-        fi
-        echo "  Country code must be two letters (e.g. US, DE, GB)."
-    done
+    local country="${OPENASTRO_COUNTRY:-US}"
+    if [[ "$country" =~ ^[A-Za-z]{2}$ ]]; then
+        country="${country^^}"
+    else
+        echo "ERROR: OPENASTRO_COUNTRY must be two letters (e.g. US, DE, GB)."
+        return 1
+    fi
+
+    echo ""
+    echo "Setting up the built-in WiFi hotspot (like the other OpenAstro boards):"
+    if [ $custom_ssid -eq 1 ]; then
+        echo "  SSID:     $ssid"
+    else
+        echo "  SSID:     OpenAstro-XXXX (XXXX = last 4 of the WiFi MAC)"
+    fi
+    if [ -n "${OPENASTRO_PSK:-}" ]; then
+        echo "  Password: (custom)"
+    else
+        echo "  Password: 12345678  (change it from the AlpacaBridge portal)"
+    fi
+    echo "  Country:  $country"
+    echo "Set OPENASTRO_WIFI=no to skip, or OPENASTRO_SSID/OPENASTRO_PSK/"
+    echo "OPENASTRO_COUNTRY to customize."
 
     local mnt
     mnt="$(mktemp -d /tmp/openastro-wifi-mount-XXXXXX)"
