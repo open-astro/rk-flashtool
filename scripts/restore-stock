@@ -1,6 +1,13 @@
 #!/bin/bash
 set -e
 
+# Everything below needs root (raw USB flashing, loop-mounting the image).
+if [ "$(id -u)" -ne 0 ]; then
+    echo "ERROR: this script must be run as root:" >&2
+    echo "  sudo $0 $*" >&2
+    exit 1
+fi
+
 # Restore stock ASIAIR firmware from backup.
 #
 # Two modes:
