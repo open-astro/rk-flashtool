@@ -52,7 +52,7 @@ The installer handles everything automatically:
 1. **Jailbreaks** your ASIAIR to enable SSH (over the network, no physical access)
 2. **Backs up** all partitions over SSH (~7.7 GB) - your only way back to stock
 3. **Downloads** the OpenAstro Linux image from GitHub Releases
-4. **Offers a WiFi hotspot** - the unit broadcasts its own network (like the stock ASIAIR); join it and reach the unit at `astro@172.24.1.1`. Defaults to SSID `OpenAstro-XXXX` (XXXX = last 4 of the WiFi MAC) with password `12345678`, or enter your own SSID/password at the prompt. Skip to connect over the wired Ethernet port
+4. **Sets up the WiFi hotspot** - enabled by default like the other OpenAstro boards: the unit broadcasts its own network (like the stock ASIAIR); join it and reach the unit at `astro@172.24.1.1`. SSID `OpenAstro-XXXX` (XXXX = last 4 of the WiFi MAC), password `12345678`; change it later from the AlpacaBridge portal, override with `OPENASTRO_SSID`/`OPENASTRO_PSK`/`OPENASTRO_COUNTRY`, or set `OPENASTRO_WIFI=no` to skip and use wired Ethernet only
 5. **Pauses** and asks you to enter Loader mode (hold the reset button while powering on)
 6. **Flashes** the stock boot chain from your backup + OpenAstro Linux rootfs
 
@@ -71,13 +71,21 @@ ssh astro@openastro.local
 | Setting | Value |
 |---------|-------|
 | Hostname | `openastro` |
-| User | `astro` |
-| Password | `astro` |
+| Login | `astro` / `astro` - **change immediately:** `passwd` |
 | SSH | Enabled (root login disabled; unique host keys are generated on first boot) |
-| WiFi | Optional hotspot set during install (default `OpenAstro-XXXX` / `12345678`, reach unit at `172.24.1.1`), or manage from the AlpacaBridge portal's WiFi card |
+| WiFi AP | `OpenAstro-XXXX` (5 GHz, ch 36), password `12345678` - on by default like the other OpenAstro boards |
+| AP address | `172.24.1.1` (DHCP for clients) |
+| Ethernet | DHCP |
 | AlpacaBridge | Preinstalled ASCOM Alpaca server + web portal at `http://openastro.local:6800` (from the hotspot: `http://172.24.1.1:6800` or `http://openastro.lan:6800`) |
 
-**Change the default password immediately:** `passwd`
+`XXXX` is the last 4 hex digits of the unit's WiFi MAC address (e.g.
+`OpenAstro-915D`), applied automatically on first boot so multiple units in
+the same place each get a unique hotspot name.
+
+Reach it over ethernet (`ssh astro@<ip>`) or by joining the `OpenAstro-XXXX`
+WiFi and logging in at `172.24.1.1`. The access point starts automatically at
+every boot. Manage WiFi (join your own network, hotspot settings, country)
+from the AlpacaBridge portal's WiFi card.
 
 [AlpacaBridge](https://github.com/open-astro/AlpacaBridge) comes preinstalled and updates via `apt` from apt.openastro.net. Its web portal manages devices, WiFi (scan/join networks, hotspot settings, regulatory country), and time sync.
 

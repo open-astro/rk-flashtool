@@ -5,7 +5,9 @@ set -e
 # Accepts both raw .img and compressed .img.gz files.
 #
 # Usage: sudo scripts/flash-rootfs [--no-wifi] [rootfs-image]
-#   --no-wifi  skip the WiFi hotspot prompt (also: OPENASTRO_WIFI=no)
+#   --no-wifi  skip the WiFi hotspot setup (also: OPENASTRO_WIFI=no); the
+#              hotspot is otherwise enabled by default with the fleet defaults
+#              (customize via OPENASTRO_SSID / OPENASTRO_PSK / OPENASTRO_COUNTRY)
 
 REPODIR="$(cd "$(dirname "$0")/.." && pwd)"
 TOOL="$REPODIR/rk-flashtool"
