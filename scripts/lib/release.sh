@@ -8,7 +8,7 @@
 # to RELEASE_FALLBACK_TAG, so offline runs with a cached image still work.
 
 RELEASE_REPO="open-astro/rk-flashtool"
-RELEASE_FALLBACK_TAG="v1.2"
+RELEASE_FALLBACK_TAG="v1.1"
 
 # A sane tag is v + digit, then digits/dots/hyphens/alphanumerics (covers
 # pre-release tags like v1.3.0-rc1); anything else is rejected — applied to
