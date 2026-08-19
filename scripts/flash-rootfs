@@ -11,14 +11,15 @@ REPODIR="$(cd "$(dirname "$0")/.." && pwd)"
 TOOL="$REPODIR/rk-flashtool"
 # shellcheck source=lib/wifi.sh
 . "$REPODIR/scripts/lib/wifi.sh"
-RELEASE_URL="https://github.com/open-astro/rk-flashtool/releases/download/v1.1/rootfs-stock.img.gz"
 IMAGES_DIR="$REPODIR/images"
+# shellcheck source=lib/release.sh
+. "$REPODIR/scripts/lib/release.sh"
 
 # pick_workdir() is provided by scripts/lib/wifi.sh (sourced above).
 
-# Search order for rootfs image: arg > images/ in repo > ../asiair-image/
+# Search order for rootfs image: arg > current-release cache in images/ > ../asiair-image/
 find_rootfs() {
-    local paths=("$IMAGES_DIR/astrolinux-trixie-rk3568" "$(dirname "$REPODIR")/asiair-image/rootfs-stock")
+    local paths=("$IMAGES_DIR/astrolinux-trixie-rk3568-$RELEASE_TAG" "$(dirname "$REPODIR")/asiair-image/rootfs-stock")
     for p in "${paths[@]}"; do
         for ext in .img .img.gz; do
             [ -f "${p}${ext}" ] && echo "${p}${ext}" && return
@@ -28,8 +29,8 @@ find_rootfs() {
 
 download_rootfs() {
     mkdir -p "$IMAGES_DIR"
-    local dest="$IMAGES_DIR/astrolinux-trixie-rk3568.img.gz"
-    echo "OpenAstro Linux image not found locally. Downloading..."
+    local dest="$IMAGES_DIR/astrolinux-trixie-rk3568-$RELEASE_TAG.img.gz"
+    echo "OpenAstro Linux $RELEASE_TAG image not found locally. Downloading..."
     echo "  $RELEASE_URL"
     echo ""
     if command -v wget >/dev/null 2>&1; then
@@ -39,7 +40,7 @@ download_rootfs() {
     else
         echo "ERROR: wget or curl required. Download manually:"
         echo "  mkdir -p images"
-        echo "  wget -O images/astrolinux-trixie-rk3568.img.gz $RELEASE_URL"
+        echo "  wget -O images/astrolinux-trixie-rk3568-$RELEASE_TAG.img.gz $RELEASE_URL"
         exit 1
     fi
     echo ""
@@ -57,9 +58,13 @@ for a in "$@"; do
 done
 set -- "${ARGS[@]}"
 
-ROOTFS_ARG="${1:-$(find_rootfs)}"
-if [ -z "$ROOTFS_ARG" ]; then
-    ROOTFS_ARG="$(download_rootfs)"
+# An explicit image path skips release resolution entirely (no network).
+if [ -n "$1" ]; then
+    ROOTFS_ARG="$1"
+else
+    resolve_release "$IMAGES_DIR"
+    ROOTFS_ARG="$(find_rootfs)"
+    [ -n "$ROOTFS_ARG" ] || ROOTFS_ARG="$(download_rootfs)"
 fi
 
 if [ ! -x "$TOOL" ]; then

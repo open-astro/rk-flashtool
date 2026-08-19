@@ -18,12 +18,13 @@ if [ -z "$LOADER" ]; then
     fi
 fi
 CLEANUP_TMP=""
-RELEASE_URL="https://github.com/open-astro/rk-flashtool/releases/download/v1.1/rootfs-stock.img.gz"
 IMAGES_DIR="$REPODIR/images"
+# shellcheck source=lib/release.sh
+. "$REPODIR/scripts/lib/release.sh"
 
-# Search order for rootfs image: arg > images/ in repo > ../asiair-image/
+# Search order for rootfs image: arg > current-release cache in images/ > ../asiair-image/
 find_rootfs() {
-    local paths=("$IMAGES_DIR/astrolinux-trixie-rk3568" "$(dirname "$REPODIR")/asiair-image/rootfs-stock")
+    local paths=("$IMAGES_DIR/astrolinux-trixie-rk3568-$RELEASE_TAG" "$(dirname "$REPODIR")/asiair-image/rootfs-stock")
     for p in "${paths[@]}"; do
         for ext in .img .img.gz; do
             [ -f "${p}${ext}" ] && echo "${p}${ext}" && return
@@ -34,8 +35,8 @@ find_rootfs() {
 # Download image from GitHub Releases if not found locally
 download_rootfs() {
     mkdir -p "$IMAGES_DIR"
-    local dest="$IMAGES_DIR/astrolinux-trixie-rk3568.img.gz"
-    echo "OpenAstro Linux image not found locally. Downloading..."
+    local dest="$IMAGES_DIR/astrolinux-trixie-rk3568-$RELEASE_TAG.img.gz"
+    echo "OpenAstro Linux $RELEASE_TAG image not found locally. Downloading..."
     echo "  $RELEASE_URL"
     echo ""
     if command -v wget >/dev/null 2>&1; then
@@ -46,7 +47,7 @@ download_rootfs() {
         echo "ERROR: wget or curl required to download the image."
         echo "Install one, or download manually:"
         echo "  mkdir -p images"
-        echo "  wget -O images/astrolinux-trixie-rk3568.img.gz $RELEASE_URL"
+        echo "  wget -O images/astrolinux-trixie-rk3568-$RELEASE_TAG.img.gz $RELEASE_URL"
         exit 1
     fi
     echo ""
@@ -54,9 +55,13 @@ download_rootfs() {
     echo "$dest"
 }
 
-ROOTFS_ARG="${1:-$(find_rootfs)}"
-if [ -z "$ROOTFS_ARG" ]; then
-    ROOTFS_ARG="$(download_rootfs)"
+# An explicit image path skips release resolution entirely (no network).
+if [ -n "$1" ]; then
+    ROOTFS_ARG="$1"
+else
+    resolve_release "$IMAGES_DIR"
+    ROOTFS_ARG="$(find_rootfs)"
+    [ -n "$ROOTFS_ARG" ] || ROOTFS_ARG="$(download_rootfs)"
 fi
 
 if [ ! -x "$TOOL" ]; then
