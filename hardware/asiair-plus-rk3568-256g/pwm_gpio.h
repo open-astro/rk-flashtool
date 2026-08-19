@@ -23,7 +23,7 @@
  *   0      29      GPIO0_D5     Network/status LED
  *   1      30      GPIO0_D6     Status LED
  *   2      5       GPIO0_A5     Physical button (input)
- *   3      15      GPIO0_B7     DC master enable / control signal
+ *   3      15      GPIO0_B7     Piezo buzzer (PWM mode: period=1/freq, duty=volume)
  *   4      150     GPIO4_C6     DC power port 1 (PWM capable)
  *   5      149     GPIO4_C5     DC power port 2 (PWM capable)
  *   6      146     GPIO4_C2     DC power port 3 (PWM capable)
@@ -85,29 +85,38 @@ typedef struct work_mode_s {
  * The driver validates index < nr_gpios before dispatching.
  */
 
+/*
+ * Command numbering corrected 2026-08-18 against the stock zwoair_imager
+ * userspace wrappers (gpio_work_mode_set / pwm_param_set / pwm_enable /
+ * pwm_disable / gpio_level_get / gpio_level_set) and verified live on
+ * hardware (buzzer test). The original decode had enable/disable swapped
+ * and mode/level shifted.
+ */
+
 /* Read GPIO level: pass index, get back level */
 #define PWM_GPIO_GET_LEVEL    _IOR(PWM_GPIO_MAGIC, 1, gpio_level_t)   /* 0x80084301 */
 
-/* Set GPIO level: requires GPIO mode (mode=1), output direction */
-#define PWM_GPIO_SET_LEVEL    _IOW(PWM_GPIO_MAGIC, 2, gpio_level_t)   /* 0x40084302 */
+/* Set work mode (1=GPIO, 2=PWM) */
+#define PWM_GPIO_SET_MODE     _IOW(PWM_GPIO_MAGIC, 2, work_mode_t)    /* 0x40084302 */
 
 /* Read current PWM config: pass index, get back period_ns + duty_ns */
 #define PWM_GPIO_GET_CONFIG   _IOR(PWM_GPIO_MAGIC, 3, pwm_param_t)    /* 0x800c4303 */
 
-/* Set PWM config: requires PWM mode (mode=2). Sets period and duty cycle */
+/* Set PWM config: requires PWM mode (mode=2). Sets period and duty cycle.
+ * Takes effect only after PWM_GPIO_ENABLE - always config first, then enable */
 #define PWM_GPIO_SET_CONFIG   _IOW(PWM_GPIO_MAGIC, 4, pwm_param_t)    /* 0x400c4304 */
 
-/* Disable GPIO output (set to input / hi-Z). Pass index only */
-#define PWM_GPIO_DISABLE      _IOW(PWM_GPIO_MAGIC, 5, int)            /* 0x40044305 */
+/* Start PWM output on the index. Pass index only. Call AFTER SET_CONFIG */
+#define PWM_GPIO_ENABLE       _IOW(PWM_GPIO_MAGIC, 5, int)            /* 0x40044305 */
 
-/* Enable GPIO output. Pass index only */
-#define PWM_GPIO_ENABLE       _IOW(PWM_GPIO_MAGIC, 6, int)            /* 0x40044306 */
+/* Stop PWM output on the index. Pass index only */
+#define PWM_GPIO_DISABLE      _IOW(PWM_GPIO_MAGIC, 6, int)            /* 0x40044306 */
 
-/* Set work mode (GPIO vs PWM) */
-#define PWM_GPIO_SET_MODE     _IOW(PWM_GPIO_MAGIC, 7, work_mode_t)    /* 0x40084307 */
+/* Read GPIO level (alternate/state query used by stock app) */
+#define PWM_GPIO_LEVEL_GET    _IOW(PWM_GPIO_MAGIC, 7, gpio_level_t)   /* 0x40084307 */
 
-/* Read physical button/key state */
-#define PWM_GPIO_GET_KEYS     _IOW(PWM_GPIO_MAGIC, 8, gpio_level_t)   /* 0x40084308 */
+/* Set GPIO level: requires GPIO mode (mode=1) */
+#define PWM_GPIO_SET_LEVEL    _IOW(PWM_GPIO_MAGIC, 8, gpio_level_t)   /* 0x40084308 */
 
 /*
  * Usage examples (pseudocode):
@@ -127,10 +136,14 @@ typedef struct work_mode_s {
  * gpio_level_t usb = { .index = 10, .level = 0 };
  * ioctl(fd, PWM_GPIO_SET_LEVEL, &usb);
  *
- * // Read button state (index 2):
- * gpio_level_t key = { .index = 2 };
- * ioctl(fd, PWM_GPIO_GET_KEYS, &key);
- * // key.level now contains button state
+ * // Beep the buzzer (index 3) at 1 kHz, stock volume (4% duty), verified:
+ * work_mode_t wm = { .index = 3, .mode = PWM_GPIO_MODE_PWM };
+ * ioctl(fd, PWM_GPIO_SET_MODE, &wm);
+ * pwm_param_t bp = { .index = 3, .period_ns = 1000000, .duty_ns = 40000 };
+ * ioctl(fd, PWM_GPIO_SET_CONFIG, &bp);       // config first...
+ * int idx = 3;
+ * ioctl(fd, PWM_GPIO_ENABLE, &idx);          // ...then enable starts the tone
+ * // stop: SET_CONFIG with duty_ns = 0 (or PWM_GPIO_DISABLE)
  */
 
 #endif /* PWM_GPIO_H */
