@@ -23,7 +23,9 @@ TOOL="$REPODIR/rk-flashtool"
 BACKUP_DIR="$REPODIR/asiair-backup"
 JAILBREAK_DIR="$REPODIR/jailbreak"
 IMAGES_DIR="$REPODIR/images"
-RELEASE_URL="https://github.com/open-astro/rk-flashtool/releases/download/v1.1/rootfs-stock.img.gz"
+# shellcheck source=lib/release.sh
+. "$REPODIR/scripts/lib/release.sh"
+resolve_release
 CLEANUP_TMP=""
 FLASH_ONLY=false
 REBACKUP=false
@@ -271,7 +273,7 @@ echo "========================================"
 echo ""
 
 find_rootfs() {
-    local paths=("$IMAGES_DIR/astrolinux-trixie-rk3568" "$(dirname "$REPODIR")/asiair-image/rootfs-stock")
+    local paths=("$IMAGES_DIR/astrolinux-trixie-rk3568-$RELEASE_TAG" "$(dirname "$REPODIR")/asiair-image/rootfs-stock")
     for p in "${paths[@]}"; do
         for ext in .img .img.gz; do
             [ -f "${p}${ext}" ] && echo "${p}${ext}" && return 0
@@ -292,7 +294,7 @@ if [ -z "$ROOTFS_IMG" ]; then
     echo "  $RELEASE_URL"
     echo ""
     mkdir -p "$IMAGES_DIR"
-    local_dest="$IMAGES_DIR/astrolinux-trixie-rk3568.img.gz"
+    local_dest="$IMAGES_DIR/astrolinux-trixie-rk3568-$RELEASE_TAG.img.gz"
     if command -v wget >/dev/null 2>&1; then
         wget -O "$local_dest" "$RELEASE_URL" || { rm -f "$local_dest"; echo "Download failed."; exit 1; }
     elif command -v curl >/dev/null 2>&1; then
