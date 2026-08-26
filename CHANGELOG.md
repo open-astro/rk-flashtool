@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Standard OpenAstro system layer** (`scripts/build/rootfs-setup.sh`), aligning the ASIAIR image with the other OpenAstro boards:
   - Unique SSH host keys per unit: the build strips the debootstrap-generated keys (previously shared by every flashed unit) and a first-boot oneshot regenerates them before sshd starts.
   - Per-board hotspot SSID `OpenAstro-XXXX` (last 4 hex of the wlan0 MAC), applied once on first boot by the `openastro-ssid` oneshot; a flash-time custom SSID suppresses the suffix.
+  - Per-board hostname `openastro-xxxx` (same 4 hex, lowercase), set by the same oneshot when the hostname is still the image default, so two units on one LAN never collide on DHCP/mDNS and the ID matches the SSID and AlpacaBridge's device names.
+  - CPU governor pinned to `performance` (`openastro-cpufreq.service`): the default governor's first-burst clock ramp showed as ~100 ms FAST timing blips in ConformU (AlpacaBridge issue #220).
   - Persistent journald logs (`/var/log/journal`).
   - ZWO HID udev rule (`70-openastro-zwo-hid.rules`, idVendor 03c3, hidraw + hiddev, mode 0666).
   - User `astro` added to hardware-access groups (dialout, plugdev, audio, video, netdev where present).

@@ -65,22 +65,25 @@ Total time: ~15 minutes (mostly waiting for the backup transfer).
 The device reboots automatically after flashing. Disconnect USB and wait about 60 seconds.
 
 ```
-ssh astro@openastro.local
+ssh astro@openastro-xxxx.local
 ```
 
 | Setting | Value |
 |---------|-------|
-| Hostname | `openastro` |
+| Hostname | `openastro-xxxx` (xxxx = last 4 hex of the WiFi MAC, lowercase) |
 | Login | `astro` / `astro` - **change immediately:** `passwd` |
 | SSH | Enabled (root login disabled; unique host keys are generated on first boot) |
 | WiFi AP | `OpenAstro-XXXX` (5 GHz, ch 36), password `12345678` - on by default like the other OpenAstro boards |
 | AP address | `172.24.1.1` (DHCP for clients) |
 | Ethernet | DHCP |
-| AlpacaBridge | Preinstalled ASCOM Alpaca server + web portal at `http://openastro.local:6800` (from the hotspot: `http://172.24.1.1:6800` or `http://openastro.lan:6800`) |
+| AlpacaBridge | Preinstalled ASCOM Alpaca server + web portal at `http://openastro-xxxx.local:6800` (from the hotspot: `http://172.24.1.1:6800`) |
 
 `XXXX` is the last 4 hex digits of the unit's WiFi MAC address (e.g.
 `OpenAstro-915D`), applied automatically on first boot so multiple units in
-the same place each get a unique hotspot name.
+the same place each get a unique hotspot name. The hostname gets the same
+suffix in lowercase (`openastro-915d`), so two units on one home network never
+fight over the same DHCP or mDNS name, and AlpacaBridge stamps the same 4
+characters on its device names (`915D: ...` in NINA). One ID everywhere.
 
 Reach it over ethernet (`ssh astro@<ip>`) or by joining the `OpenAstro-XXXX`
 WiFi and logging in at `172.24.1.1`. The access point starts automatically at
@@ -204,7 +207,7 @@ sudo ./rk-flashtool -h
 ### SSH connection refused after flash
 
 - Wait 30-60 seconds for first boot to complete
-- Try `ssh astro@openastro.local` or check your router for the device's IP
+- Try `ssh astro@openastro-xxxx.local` or check your router for the device's IP
 - If WiFi isn't configured yet, connect via ethernet
 
 ### Need to recover from a bad flash

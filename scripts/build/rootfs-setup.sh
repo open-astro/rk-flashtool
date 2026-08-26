@@ -153,11 +153,16 @@ SUBSYSTEM=="hidraw", ATTRS{idVendor}=="03c3", GROUP="plugdev", MODE="0666"
 KERNEL=="hiddev*", ATTRS{idVendor}=="03c3", GROUP="plugdev", MODE="0666"
 EOF
 
-# --- Per-board hotspot SSID (OpenAstro-XXXX) ---
+# --- Per-board hotspot SSID and hostname (OpenAstro-XXXX) ---
 # On first boot, append the last 4 hex digits of the wlan0 MAC to the hotspot
-# SSID so every unit broadcasts a unique name. The stamp file prevents a second
-# suffix on later boots, and is pre-created at flash time when the user picks a
-# custom SSID (see scripts/lib/wifi.sh).
+# SSID so every unit broadcasts a unique name, and give the hostname the same
+# suffix in lowercase (openastro-xxxx) so two units on one home LAN don't
+# fight over the same DHCP/mDNS name (openastro.local flipping between IPs).
+# The same 4 hex are what AlpacaBridge stamps on DeviceName/UniqueID, so SSID
+# OpenAstro-915D = host openastro-915d = "915D: ..." devices in NINA. The
+# stamp file prevents a second suffix on later boots, and is pre-created at
+# flash time when the user picks a custom SSID (see scripts/lib/wifi.sh);
+# only the image-default hostname is ever suffixed.
 cat > "$ROOTFS/usr/local/sbin/openastro-ssid" << 'EOF'
 #!/bin/sh
 set -e
@@ -188,13 +193,19 @@ rm -f "$ATTEMPTS"
 SUFFIX=$(tr -d ':\n' < /sys/class/net/wlan0/address | tail -c 4 | tr 'a-f' 'A-F')
 [ -n "$SUFFIX" ] || exit 0
 sed -i "s/^ssid=.*/ssid=OpenAstro-$SUFFIX/; s/^id=.*/id=OpenAstro-$SUFFIX/" "$KEYFILE"
+if [ "$(cat /etc/hostname)" = "openastro" ]; then
+    HOST="openastro-$(echo "$SUFFIX" | tr 'A-F' 'a-f')"
+    echo "$HOST" > /etc/hostname
+    sed -i "s/^127\.0\.1\.1[[:space:]].*/127.0.1.1\t${HOST}/" /etc/hosts
+    hostname "$HOST"
+fi
 mkdir -p /var/lib/openastro
 touch "$STAMP"
 EOF
 chmod 755 "$ROOTFS/usr/local/sbin/openastro-ssid"
 cat > "$ROOTFS/etc/systemd/system/openastro-ssid.service" << 'EOF'
 [Unit]
-Description=Set per-board OpenAstro hotspot SSID
+Description=Set per-board OpenAstro hotspot SSID and hostname
 Before=NetworkManager.service
 
 [Service]
@@ -205,6 +216,34 @@ ExecStart=/usr/local/sbin/openastro-ssid
 WantedBy=multi-user.target
 EOF
 chroot "$ROOTFS" /bin/bash -c "systemctl enable openastro-ssid"
+
+# --- CPU governor: performance (AlpacaBridge issue #220) ---
+# The default governor pays a ~100 ms clock-ramp on the first request burst,
+# which showed up as single-member FAST timing blips in ConformU runs (even on
+# I/O-free getters). Pinning performance produced 0 timing violations over
+# five consecutive runs. An astro appliance is on mains power - latency beats
+# the marginal idle savings.
+cat > "$ROOTFS/usr/local/sbin/openastro-cpufreq" << 'EOF'
+#!/bin/sh
+for g in /sys/devices/system/cpu/cpufreq/policy*/scaling_governor; do
+    [ -w "$g" ] && echo performance > "$g" 2>/dev/null
+done
+exit 0
+EOF
+chmod 755 "$ROOTFS/usr/local/sbin/openastro-cpufreq"
+cat > "$ROOTFS/etc/systemd/system/openastro-cpufreq.service" << 'EOF'
+[Unit]
+Description=OpenAstro: pin CPU governor to performance
+After=multi-user.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/openastro-cpufreq
+
+[Install]
+WantedBy=multi-user.target
+EOF
+chroot "$ROOTFS" /bin/bash -c "systemctl enable openastro-cpufreq"
 
 # --- NetworkManager ---
 # NM manages ALL interfaces (fleet policy), ethernet included: with no
