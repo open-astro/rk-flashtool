@@ -284,3 +284,34 @@ sudo udevadm control --reload-rules
 # Build rk-flashtool
 autoreconf -i && ./configure && make
 ```
+
+## WARNING: USB transfer truncation through VM passthrough (learned 2026-08-25)
+
+Large transfers through VMware USB passthrough silently truncate at roughly
+the 24-32 MB absolute-offset mark. Reads past the limit return a uniform
+0xCC fill with NO error - the tool reports success. Observed consequences:
+
+- A 64 MB p3 backup taken through the VM contained real data for the first
+  ~16 MB of the file and 0xCC after. Restoring it produced a truncated
+  kernel (stock kernel is ~22.8 MB): SYS LED solid, no boot, board still
+  reachable in Loader mode.
+- A 36 MB boot-image write through the VM likely truncated the same way -
+  a "successful" flash that then failed to boot is not proof the image is
+  bad.
+
+Rules:
+1. **Flash and back up from a physical PC**, never through VM USB passthrough.
+2. **Never trust a backup you have not inspected**: check the tail is not a
+   constant fill (`od -A x -j <bytes-8MB> -N 64 -t x1 file`), and check the
+   declared kernel size in the ANDROID! header fits inside the valid region.
+3. After any restore, verify with a read-back compare of as much as the
+   session allows AND a boot test.
+4. Small reads/writes in the first ~16 MB (GPT, uboot, misc, boot header)
+   are reliable even through the VM.
+
+Recovery from a truncated p3: flash a known-good full p3 image
+(asiair-backup/20260423_p3_boot.bin) - recovered a device from this exact
+state 2026-08-25 (eMMC-short Maskrom entry, db SPL, wl 0x8000, rd).
+
+Note: the photos referenced by manual-restore.md were never committed to the
+repo - the text description above ("Entering Maskrom Mode") is the reference.
