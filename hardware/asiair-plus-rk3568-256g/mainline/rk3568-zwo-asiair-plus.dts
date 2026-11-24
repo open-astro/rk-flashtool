@@ -38,6 +38,11 @@
 	chosen {
 		/* Stock debug console: uart2m0 @ 1.5 Mbaud (fiq-debugger serial-id 2) */
 		stdout-path = "serial2:1500000n8";
+		/*
+		 * Stock U-Boot takes the command line from here (the boot.img
+		 * header cmdline is empty). root= is the stock rootfs (p7) PARTUUID.
+		 */
+		bootargs = "earlycon=uart8250,mmio32,0xfe660000 console=ttyS2,1500000n8 root=PARTUUID=614e0000-0000-4b53-8000-1d2800005999 rootfstype=ext4 rootwait rw systemd.gpt_auto=0 coherent_pool=8M";
 	};
 
 	/* RGMII 125 MHz reference supplied by the PHY (stock external-gmac1-clock) */
