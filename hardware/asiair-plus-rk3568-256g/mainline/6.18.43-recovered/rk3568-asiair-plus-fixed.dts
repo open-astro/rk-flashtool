@@ -35,8 +35,10 @@
 		spi3 = "/spi@fe640000";
 		ethernet0 = "/ethernet@fe2a0000";
 		ethernet1 = "/ethernet@fe010000";
-		mmc0 = "/mmc@fe2b0000";
-		mmc1 = "/mmc@fe310000";
+		mmc0 = "/mmc@fe310000";
+		mmc1 = "/mmc@fe2b0000";
+		mmc2 = "/mmc@fe2c0000";
+		mmc3 = "/mmc@fe000000";
 	};
 
 	cpus {
@@ -5183,7 +5185,7 @@
 		led-activity {
 			label = "airplus_activity";
 			gpios = <0x23 0x1b 0x01>;
-			linux,default-trigger = "heartbeat";
+			linux,default-trigger = "activity";
 			default-state = "off";
 		};
 	};
