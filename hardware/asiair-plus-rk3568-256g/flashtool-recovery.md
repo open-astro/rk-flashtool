@@ -28,13 +28,16 @@ The device should appear as `Vid=0x2207,Pid=0x350a ... Loader` in `sudo ./rk-fla
 (`lsusb` shows "Fuzhou Rockchip ... USB download gadget"). When a flash finishes and
 the device resets, it beeps once the OS is up and working.
 
-**How it works (verified 2026-11-24):** the reset button is wired to SARADC channel 0
-(1.8 V idle, ~26 mV pressed). The stock Rockchip U-Boot (`next-dev` `dde42ec6a2`)
-enters download mode in `setup_download_mode()` when KEY_VOLUMEUP is read through an
-`adc-keys` node **in the kernel DTB** and the USB2 PHY (looked up by the node name
-prefix `usb2-phy`) reports VBUS. If no VBUS is seen, it boots the recovery partition
-instead. Reset-button Loader mode was confirmed on the mainline 6.18 image, whose DT
-declares that `adc-keys` node.
+**Verified 2026-11-24 on both the stock ZWO firmware and the mainline 6.18
+image.** Follow the order above: earlier attempts that connected USB before holding
+reset did not enter Loader mode.
+
+Background: the reset button is wired to SARADC channel 0 (1.8 V idle, ~26 mV
+pressed). The stock Rockchip U-Boot (`next-dev` `dde42ec6a2`) enters download mode
+in `setup_download_mode()` when the download key is pressed and the USB2 PHY (looked
+up by the node name prefix `usb2-phy`) reports VBUS. If no VBUS is seen, it boots
+the recovery partition instead. The mainline DT therefore keeps the node name
+`usb2-phy@fe8a0000` and declares an `adc-keys` node for the button.
 
 ### Entering Maskrom Mode
 
