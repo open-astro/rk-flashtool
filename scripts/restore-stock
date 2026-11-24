@@ -11,12 +11,15 @@ fi
 # Restore stock ASIAIR firmware from backup.
 #
 # Two modes:
-#   1. Rootfs only (default) - restores just partition 7. Safe, works in Loader mode.
+#   1. Default - restores the stock kernel (p3) and rootfs (p7). Works in
+#      Loader mode (hold the reset button while powering on). p3 is included
+#      because a mainline-kernel image replaces it; the stock rootfs only boots
+#      with the stock kernel.
 #   2. Full restore - restores bootloader + all partitions. For recovery from a
 #      bricked device. Requires Maskrom mode.
 #
 # Usage:
-#   sudo scripts/restore-stock          # rootfs only (Loader mode)
+#   sudo scripts/restore-stock          # kernel + rootfs (Loader mode)
 #   sudo scripts/restore-stock --full   # full restore (Maskrom mode)
 
 REPODIR="$(cd "$(dirname "$0")/.." && pwd)"
@@ -28,8 +31,13 @@ if [ "${1:-}" = "--full" ]; then
     FULL_RESTORE=true
 fi
 
-if [ ! -x "$TOOL" ]; then
-    echo "rk-flashtool not found. Build it first:"
+# -f, not just -x: in a checkout that contains a nested clone named
+# rk-flashtool/, -x is true for the directory and every "$TOOL ld" call
+# then fails silently ("No ASIAIR found" even with the device in Loader).
+if [ ! -f "$TOOL" ] || [ ! -x "$TOOL" ]; then
+    echo "rk-flashtool binary not found at: $TOOL"
+    [ -d "$TOOL" ] && echo "  ($TOOL is a directory - run this script from that checkout instead)"
+    echo "Build it first:"
     echo "  ./autogen.sh && ./configure && make"
     exit 1
 fi
@@ -161,20 +169,40 @@ if $FULL_RESTORE; then
     fi
 
 else
-    echo "=== Restore Stock Rootfs ==="
+    BOOT=$(find_backup "p3_boot.bin")
+
+    echo "=== Restore Stock Kernel + Rootfs ==="
     echo ""
-    echo "This will restore the stock rootfs (partition 7) from your backup."
+    echo "This will restore from your backup:"
+    [ -n "$BOOT" ] && echo "  - stock kernel   (p3)  $(basename "$BOOT")"
+    echo "  - stock rootfs   (p7)  $(basename "$ROOTFS")"
     echo "All OpenAstro Linux data will be overwritten."
-    echo "The boot chain is not modified."
+    echo "The bootloader is not modified."
+    if [ -z "$BOOT" ]; then
+        echo ""
+        echo "WARNING: no *_p3_boot.bin backup found. If this unit ran a"
+        echo "mainline-kernel image, the stock rootfs will not boot without it."
+    fi
     echo ""
 
-    $TOOL ld 2>/dev/null | grep -q "Loader\|Maskrom" || {
-        echo "No ASIAIR found in Loader or Maskrom mode."
-        echo ""
-        echo "To enter Loader mode: hold the reset button while powering on."
+    LD_OUT=$($TOOL ld 2>&1 || true)
+    if ! echo "$LD_OUT" | grep -q "Loader"; then
+        if echo "$LD_OUT" | grep -q "Maskrom"; then
+            echo "Device is in Maskrom mode; use: sudo $0 --full"
+        else
+            echo "No ASIAIR found in Loader mode. rk-flashtool said:"
+            echo "  $LD_OUT"
+            echo ""
+            echo "To enter Loader mode: hold the reset button while powering on."
+        fi
         exit 1
-    }
+    fi
 
+    if [ -n "$BOOT" ]; then
+        echo "Restoring stock kernel (p3)..."
+        $TOOL wl 0x8000 "$BOOT"
+        sleep 2
+    fi
     echo "Restoring stock rootfs (p7) - this will take several minutes..."
     $TOOL wl 0x1BD38000 "$ROOTFS"
 fi
