@@ -2220,7 +2220,7 @@
 		phandle = <0x60>;
 	};
 
-	usb2phy@fe8a0000 {
+	usb2-phy@fe8a0000 {
 		compatible = "rockchip,rk3568-usb2phy";
 		reg = <0x00 0xfe8a0000 0x00 0x10000>;
 		clocks = <0x1f 0x13>;
@@ -5410,9 +5410,9 @@
 		csi_dphy = "/phy@fe870000";
 		dsi_dphy0 = "/mipi-dphy@fe850000";
 		dsi_dphy1 = "/mipi-dphy@fe860000";
-		usb2phy0 = "/usb2phy@fe8a0000";
-		usb2phy0_host = "/usb2phy@fe8a0000/host-port";
-		usb2phy0_otg = "/usb2phy@fe8a0000/otg-port";
+		usb2phy0 = "/usb2-phy@fe8a0000";
+		usb2phy0_host = "/usb2-phy@fe8a0000/host-port";
+		usb2phy0_otg = "/usb2-phy@fe8a0000/otg-port";
 		usb2phy1 = "/usb2phy@fe8b0000";
 		usb2phy1_host = "/usb2phy@fe8b0000/host-port";
 		usb2phy1_otg = "/usb2phy@fe8b0000/otg-port";
@@ -5862,5 +5862,25 @@
 		vcc5v0_usb_otg = "/regulator-vcc5v0-usb-otg";
 		vcc3v3_lcd0_n = "/regulator-vcc3v3-lcd0-n";
 		vcc3v3_lcd1_n = "/regulator-vcc3v3-lcd1-n";
+	};
+
+	/*
+	 * Reset button = SARADC channel 0 (1.8 V idle, ~26 mV pressed, threshold 30 mV; measured
+	 * on hardware 2026-11-24). The stock Rockchip U-Boot reads adc-keys from
+	 * the kernel DTB and enters Loader (rockusb) when KEY_VOLUMEUP is held
+	 * at power-on. ZWO's DT never declared it, so Loader mode was unreachable.
+	 */
+	adc-keys {
+		compatible = "adc-keys";
+		io-channels = <0x13d 0x00>;
+		io-channel-names = "buttons";
+		keyup-threshold-microvolt = <0x1b7740>;
+		poll-interval = <0x64>;
+
+		button-recovery {
+			label = "Recovery";
+			linux,code = <0x73>;
+			press-threshold-microvolt = <0x7530>;
+		};
 	};
 };
