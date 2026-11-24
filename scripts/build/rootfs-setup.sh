@@ -312,7 +312,12 @@ sed -i 's/^ccode=.*/ccode=US/' \
 # On by default since AlpacaBridge 3.4.0 shipped the WiFi manager. Needs
 # outbound network in the chroot, same as the dnsmasq safety net above.
 # Set INSTALL_ALPACABRIDGE=no to skip.
+#
+# Pinned so a rebuild ships the version that was tested, not whatever apt
+# has that day. Override with ALPACABRIDGE_VERSION=<ver>, or set it empty
+# (ALPACABRIDGE_VERSION=) to take the latest from the repo.
 INSTALL_ALPACABRIDGE="${INSTALL_ALPACABRIDGE:-yes}"
+ALPACABRIDGE_VERSION="${ALPACABRIDGE_VERSION-5.0.2}"
 if [ "$INSTALL_ALPACABRIDGE" = yes ]; then
     echo "Configuring apt.openastro.net repository..."
     # Fetch + dearmor the keyring on the build host: the image does not ship
@@ -338,10 +343,15 @@ if [ "$INSTALL_ALPACABRIDGE" = yes ]; then
         echo "WARNING: could not fetch the apt.openastro.net keyring"
     fi
     if [ "$repo_ok" = 1 ]; then
-        echo "Installing AlpacaBridge from apt.openastro.net..."
-        chroot "$ROOTFS" /bin/bash -c \
-            "DEBIAN_FRONTEND=noninteractive apt-get install -y -qq alpacabridge >/dev/null" \
-            || echo "WARNING: AlpacaBridge install failed; image will not ship AlpacaBridge"
+        ab_pkg=alpacabridge
+        [ -n "$ALPACABRIDGE_VERSION" ] && ab_pkg="alpacabridge=$ALPACABRIDGE_VERSION"
+        echo "Installing AlpacaBridge ${ALPACABRIDGE_VERSION:-(latest)} from apt.openastro.net..."
+        if chroot "$ROOTFS" /bin/bash -c \
+            "DEBIAN_FRONTEND=noninteractive apt-get install -y -qq $ab_pkg >/dev/null"; then
+            echo "  AlpacaBridge $(chroot "$ROOTFS" dpkg-query -W -f='${Version}' alpacabridge) installed"
+        else
+            echo "WARNING: AlpacaBridge install failed; image will not ship AlpacaBridge"
+        fi
     else
         echo "WARNING: apt.openastro.net unavailable; image will not ship AlpacaBridge"
     fi
