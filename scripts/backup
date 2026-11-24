@@ -50,7 +50,33 @@ if ! $SSH_CMD "$REMOTE" 'echo ok' >/dev/null 2>&1; then
     exit 1
 fi
 
+# Only back up a STOCK unit. restore-stock restores the newest *_p3_boot.bin /
+# *_p7_rootfs.bin it finds, so a backup taken from a unit already running
+# OpenAstro (especially the mainline kernel) would silently become the "stock"
+# image that restore-stock writes back.
+REMOTE_KERNEL="$($SSH_CMD "$REMOTE" 'uname -r' 2>/dev/null || true)"
+case "$REMOTE_KERNEL" in
+    4.19.*) ;;
+    *)
+        if [ "${ALLOW_NON_STOCK:-0}" != 1 ]; then
+            echo "ERROR: $REMOTE is running kernel '${REMOTE_KERNEL:-unknown}', not the stock ZWO 4.19."
+            echo "A backup of a non-stock unit must not be used to restore stock."
+            echo "Set ALLOW_NON_STOCK=1 to back it up anyway (into a separate folder)."
+            exit 1
+        fi
+        echo "WARNING: backing up a non-stock unit (kernel $REMOTE_KERNEL)."
+        ;;
+esac
+
 mkdir -p "$BACKUP_DIR"
+
+# Never overwrite an existing backup: a re-run on the same day would
+# otherwise truncate the stock images in place.
+if ls "$BACKUP_DIR/${DATE}_"* >/dev/null 2>&1; then
+    echo "ERROR: $BACKUP_DIR already has a backup from $DATE; not overwriting it."
+    echo "Move it aside or pass a different backup_dir."
+    exit 1
+fi
 
 ok_count=0
 fail_count=0
@@ -63,13 +89,16 @@ pull_backup() {
     echo "--- $desc ---"
     echo "  -> $local_file"
 
-    if $SSH_CMD "$REMOTE" "echo $PASS | sudo -S $remote_cmd" > "$local_file"; then
+    # .partial + rename: an interrupted transfer never looks like a backup
+    if $SSH_CMD "$REMOTE" "echo $PASS | sudo -S $remote_cmd" > "$local_file.partial" \
+        && mv "$local_file.partial" "$local_file"; then
         local size
         size=$(stat -c%s "$local_file" 2>/dev/null || stat -f%z "$local_file" 2>/dev/null || echo "?")
         echo "  Size: $size bytes"
         echo "  OK"
         ok_count=$((ok_count + 1))
     else
+        rm -f "$local_file.partial"
         echo "  FAILED"
         fail_count=$((fail_count + 1))
     fi

@@ -81,7 +81,8 @@ if $FLASH_ONLY; then
     echo "========================================"
     echo ""
     echo "Skipping jailbreak and backup."
-    echo "This will download the image and flash partition 7 only."
+    echo "This will download the image and flash the rootfs (partition 7)"
+    echo "and its matching kernel boot image (partition 3)."
     echo ""
     prompt_continue "Ready to begin?"
 else
@@ -94,9 +95,10 @@ else
     echo "  1. Jailbreak your ASIAIR to enable SSH"
     echo "  2. Backup all partitions over SSH"
     echo "  3. Download the OpenAstro Linux image"
-    echo "  4. Flash the rootfs (partition 7 only)"
+    echo "  4. Flash the rootfs (partition 7) and its kernel boot image (partition 3)"
     echo ""
-    echo "The stock boot chain is never modified."
+    echo "The bootloader and U-Boot are never modified; the stock kernel (p3)"
+    echo "and rootfs are kept in your backup for scripts/restore-stock."
     echo "Your ASIAIR must be powered on and connected"
     echo "to the same network as this computer."
     echo ""
@@ -302,6 +304,9 @@ else
     P3_LABEL="stock kernel boot image (from your backup)"
     if [ -z "$P3_IMG" ]; then
         echo "NOTE: no *_p3_boot.bin in $BACKUP_DIR; leaving p3 as it is."
+    elif ! _release_check_boot "$P3_IMG"; then
+        echo "ERROR: $P3_IMG does not look like a boot image; not flashing it."
+        exit 1
     fi
 fi
 
@@ -398,8 +403,8 @@ if [ -n "$P3_IMG" ]; then
     $TOOL wl 0x8000 "$P3_IMG" || {
         echo ""
         echo "ERROR: Boot image (p3) write failed. Nothing else was written."
-        echo "Power cycle the ASIAIR into Loader mode and run the installer again"
-        echo "with --flash-only."
+        echo "Power cycle the ASIAIR into Loader mode and run:"
+        echo "  sudo OPENASTRO_RELEASE=$RELEASE_TAG scripts/install --flash-only"
         exit 1
     }
     sleep 2
@@ -414,7 +419,9 @@ echo ""
 $TOOL wl 0x1BD38000 "$ROOTFS_IMG" || {
     echo ""
     echo "ERROR: Rootfs write failed."
-    echo "Try power cycling the ASIAIR and running: sudo scripts/flash-rootfs"
+    echo "p3 already has the $RELEASE_FLAVOR kernel; finish with the SAME release:"
+    echo "  power cycle into Loader mode, then"
+    echo "  sudo OPENASTRO_RELEASE=$RELEASE_TAG scripts/install --flash-only"
     exit 1
 }
 

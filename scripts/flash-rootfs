@@ -14,7 +14,9 @@ fi
 # With no image argument it uses the current release (images/ cache or GitHub).
 # A mainline-kernel release also carries a p3 boot image, which is written too
 # so kernel and rootfs always match. For an explicit image, BOOT_IMG=<file>
-# does the same. Stock releases leave p3 untouched.
+# does the same. For a stock release, the stock p3 from your backup
+# (BACKUP_DIR, default asiair-backup/) is written, so a unit that ran a
+# mainline image gets the stock kernel back with the stock rootfs.
 #
 # Usage: sudo scripts/flash-rootfs [--no-wifi] [rootfs-image]
 #        sudo BOOT_IMG=boot.img scripts/flash-rootfs rootfs.img.gz
@@ -55,6 +57,16 @@ else
     # Sets ROOTFS_IMG and, for a mainline release, BOOT_IMG
     fetch_release_images "$IMAGES_DIR" || { echo "Download failed."; exit 1; }
     ROOTFS_ARG="$ROOTFS_IMG"
+    if [ "$RELEASE_FLAVOR" = stock ]; then
+        BACKUP="${BACKUP_DIR:-$REPODIR/asiair-backup}"
+        BOOT_IMG="$(ls -1t "$BACKUP"/*_p3_boot.bin 2>/dev/null | head -1)"
+        if [ -n "$BOOT_IMG" ]; then
+            _release_check_boot "$BOOT_IMG" || exit 1
+            echo "Stock release: will also restore the stock kernel (p3) from $(basename "$BOOT_IMG")"
+        else
+            echo "NOTE: no *_p3_boot.bin backup in $BACKUP; p3 is left as it is."
+        fi
+    fi
 fi
 
 if [ ! -f "$TOOL" ] || [ ! -x "$TOOL" ]; then  # -f: a nested clone dir named rk-flashtool passes -x
