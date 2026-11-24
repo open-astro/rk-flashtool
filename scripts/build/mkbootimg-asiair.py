@@ -62,34 +62,43 @@ def parse_resource(res):
 
 def parse_bootimg(img):
     assert img[:8] == b"ANDROID!", "not an Android boot image"
-    ks, _, rs, _, ss = struct.unpack_from("<5I", img, 8)
+    ks, _, rs, ra, ss = struct.unpack_from("<5I", img, 8)
     ko = PAGE
-    so = ko + len(pad(b"\0" * ks, PAGE)) + len(pad(b"\0" * rs, PAGE))
-    return img[ko:ko + ks], img[so:so + ss]
+    ro = ko + len(pad(b"\0" * ks, PAGE))
+    so = ro + len(pad(b"\0" * rs, PAGE))
+    return img[ko:ko + ks], img[ro:ro + rs], ra, img[so:so + ss]
 
 
-def build_bootimg(kernel, second, cmdline=b""):
+def build_bootimg(kernel, second, cmdline=b"", ramdisk=b"", ramdisk_addr=0):
     sha = hashlib.sha1()
-    for blob in (kernel, b"", second):
+    for blob in (kernel, ramdisk, second):
         sha.update(blob)
         sha.update(struct.pack("<I", len(blob)))
     hdr = struct.pack(
         "<8s10I16s512s32s1024s",
         b"ANDROID!",
         len(kernel), KERNEL_ADDR,
-        0, 0,
+        len(ramdisk), ramdisk_addr if ramdisk else 0,
         len(second), SECOND_ADDR,
         TAGS_ADDR, PAGE,
         0, 0,  # header_version, os_version
         b"", cmdline, sha.digest(), b"",
     )
-    return pad(hdr, PAGE) + pad(kernel, PAGE) + pad(second, PAGE)
+    out = pad(hdr, PAGE) + pad(kernel, PAGE)
+    if ramdisk:
+        out += pad(ramdisk, PAGE)
+    return out + pad(second, PAGE)
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--kernel")
     ap.add_argument("--dtb")
+    ap.add_argument("--raw-dtb", action="store_true",
+                    help="put the DTB directly in the second slot instead of an RSCE resource image "
+                         "(the layout of the 6.18.43 image proven to boot on hardware)")
+    ap.add_argument("--ramdisk", help="optional initramfs (omit to boot straight to root=)")
+    ap.add_argument("--ramdisk-addr", type=lambda x: int(x, 0), default=0x0A200000)
     ap.add_argument("--logos-from", help="stock p3 dump to copy logo.bmp/logo_kernel.bmp from")
     ap.add_argument("--max-size", type=int, default=64 * 1024 * 1024, help="partition size")
     ap.add_argument("-o", "--output")
@@ -98,10 +107,15 @@ def main():
 
     if a.selftest:
         stock = open(a.selftest, "rb").read()
-        kernel, second = parse_bootimg(stock)
-        res = parse_resource(second)
-        print("stock resource entries:", [(n, len(d)) for n, d in res])
-        rebuilt = build_bootimg(kernel, build_resource(res))
+        kernel, ramdisk, raddr, second = parse_bootimg(stock)
+        if second[:4] == b"RSCE":
+            res = parse_resource(second)
+            print("resource entries:", [(n, len(d)) for n, d in res])
+            second = build_resource(res)
+        else:
+            print("second slot: raw %s (%d bytes)" % ("DTB" if second[:4] == b"\xd0\x0d\xfe\xed" else "data", len(second)))
+        print("ramdisk: %d bytes @ %#x" % (len(ramdisk), raddr))
+        rebuilt = build_bootimg(kernel, second, ramdisk=ramdisk, ramdisk_addr=raddr)
         same = stock[:len(rebuilt)] == rebuilt
         tail_zero = stock[len(rebuilt):].strip(b"\0") == b""
         print("rebuilt %d bytes; identical=%s; rest of partition zero=%s" % (len(rebuilt), same, tail_zero))
@@ -118,16 +132,22 @@ def main():
     dtb = open(a.dtb, "rb").read()
     assert kernel[56:60] == b"ARM\x64", "kernel is not an arm64 Image"
     assert dtb[:4] == b"\xd0\x0d\xfe\xed", "dtb is not a flattened device tree"
-    entries = [("rk-kernel.dtb", dtb)]
-    if a.logos_from:
-        _, second = parse_bootimg(open(a.logos_from, "rb").read())
-        entries += [(n, d) for n, d in parse_resource(second) if n.endswith(".bmp")]
-    img = build_bootimg(kernel, build_resource(entries))
+    ramdisk = open(a.ramdisk, "rb").read() if a.ramdisk else b""
+    if a.raw_dtb:
+        entries = [("raw dtb", dtb)]
+        second = dtb
+    else:
+        entries = [("rk-kernel.dtb", dtb)]
+        if a.logos_from:
+            second = parse_bootimg(open(a.logos_from, "rb").read())[3]
+            entries += [(n, d) for n, d in parse_resource(second) if n.endswith(".bmp")]
+        second = build_resource(entries)
+    img = build_bootimg(kernel, second, ramdisk=ramdisk, ramdisk_addr=a.ramdisk_addr)
     if len(img) > a.max_size:
         sys.exit("boot.img is %d bytes, larger than the %d byte partition" % (len(img), a.max_size))
     open(a.output, "wb").write(img)
-    print("wrote %s: %d bytes (%.1f MB of %.0f MB), resource: %s" % (
-        a.output, len(img), len(img) / 2**20, a.max_size / 2**20, [n for n, _ in entries]))
+    print("wrote %s: %d bytes (%.1f MB of %.0f MB), second: %s, ramdisk: %d bytes" % (
+        a.output, len(img), len(img) / 2**20, a.max_size / 2**20, [n for n, _ in entries], len(ramdisk)))
 
 
 if __name__ == "__main__":
