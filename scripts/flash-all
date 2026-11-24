@@ -31,6 +31,8 @@ if [ -z "$LOADER" ]; then
 fi
 CLEANUP_TMP=""
 IMAGES_DIR="$REPODIR/images"
+# shellcheck source=lib/wifi.sh
+. "$REPODIR/scripts/lib/wifi.sh"
 # shellcheck source=lib/release.sh
 . "$REPODIR/scripts/lib/release.sh"
 
@@ -146,17 +148,35 @@ if [ ! -f "$ROOTFS_IMG" ]; then
     exit 1
 fi
 
-# Decompress .gz images to a temp file
+# Decompress .gz images to a temp file (same as flash-rootfs: /tmp is often a
+# small tmpfs, so pick a directory with room for the ~4 GB image)
 if [[ "$ROOTFS_IMG" == *.gz ]]; then
-    echo "Decompressing $(basename "$ROOTFS_IMG")..."
-    TMPIMG="$(mktemp /tmp/astrolinux-rootfs-XXXXXX.img)"
+    WORKDIR="$(pick_workdir "$ROOTFS_IMG")" || {
+        echo "ERROR: need ~4.5 GB of free space to decompress the image, but"
+        echo "none of TMPDIR, the image directory, /var/tmp, or /tmp has enough."
+        echo "Free up space or set TMPDIR to a larger filesystem, then retry."
+        exit 1
+    }
+    echo "Decompressing $(basename "$ROOTFS_IMG") into $WORKDIR..."
+    TMPIMG="$(mktemp "$WORKDIR/astrolinux-rootfs-XXXXXX.img")"
     CLEANUP_TMP="$TMPIMG"
     trap 'rm -f "$CLEANUP_TMP"' EXIT
-    gunzip -c "$ROOTFS_IMG" > "$TMPIMG"
+    gunzip -c "$ROOTFS_IMG" > "$TMPIMG" || {
+        echo "ERROR: decompression failed (out of space?)."
+        exit 1
+    }
     ROOTFS_IMG="$TMPIMG"
     echo "Done ($(du -h "$ROOTFS_IMG" | cut -f1))."
     echo ""
 fi
+
+# WiFi hotspot profile (OpenAstro-XXXX / 12345678 by default), written into
+# the image before flashing - same step as flash-rootfs. Without it the unit
+# boots with no hotspot.
+configure_wifi_in_image "$ROOTFS_IMG" || {
+    echo "WiFi setup failed; aborting before flash."
+    exit 1
+}
 
 find_rk_usb() {
     for d in /sys/bus/usb/devices/*/idVendor; do
