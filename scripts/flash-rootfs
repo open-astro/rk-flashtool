@@ -80,7 +80,7 @@ else
     [ -n "$ROOTFS_ARG" ] || ROOTFS_ARG="$(download_rootfs)"
 fi
 
-if [ ! -x "$TOOL" ]; then
+if [ ! -f "$TOOL" ] || [ ! -x "$TOOL" ]; then  # -f: a nested clone dir named rk-flashtool passes -x
     echo "rk-flashtool not found. Build it first."
     exit 1
 fi

@@ -65,7 +65,7 @@ prompt_wait() {
 
 # --- Preflight ---
 
-if [ ! -x "$TOOL" ]; then
+if [ ! -f "$TOOL" ] || [ ! -x "$TOOL" ]; then  # -f: a nested clone dir named rk-flashtool passes -x
     echo "rk-flashtool not found. Build it first:"
     echo "  ./autogen.sh && ./configure && make"
     exit 1

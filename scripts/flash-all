@@ -13,6 +13,11 @@ fi
 # rootfs image to p7. Stock partition table is preserved.
 #
 # Usage: sudo scripts/flash-all [rootfs-image]
+#        sudo BOOT_IMG=boot-mainline-6.18.43.img scripts/flash-all rootfs-mainline.img
+#
+# BOOT_IMG: write this p3 boot image instead of the stock one from the backup
+# (mainline-kernel images; see scripts/build/mainline-boot-image.sh). The
+# bootloader and U-Boot are always the stock ones from the backup.
 
 REPODIR="$(cd "$(dirname "$0")/.." && pwd)"
 TOOL="$REPODIR/rk-flashtool"
@@ -75,7 +80,7 @@ else
     [ -n "$ROOTFS_ARG" ] || ROOTFS_ARG="$(download_rootfs)"
 fi
 
-if [ ! -x "$TOOL" ]; then
+if [ ! -f "$TOOL" ] || [ ! -x "$TOOL" ]; then  # -f: a nested clone dir named rk-flashtool passes -x
     echo "rk-flashtool not found. Build it first:"
     echo "  ./autogen.sh && ./configure && make"
     exit 1
@@ -111,6 +116,16 @@ find_backup() {
 BOOTLOADER=$(find_backup "bootloader_pre_partition.bin")
 UBOOT=$(find_backup "p1_uboot.bin")
 BOOT=$(find_backup "p3_boot.bin")
+BOOT_LABEL="stock boot image"
+if [ -n "${BOOT_IMG:-}" ]; then
+    [ -f "$BOOT_IMG" ] || { echo "BOOT_IMG not found: $BOOT_IMG"; exit 1; }
+    [ "$(head -c 8 "$BOOT_IMG")" = "ANDROID!" ] \
+        || { echo "BOOT_IMG is not an Android boot image: $BOOT_IMG"; exit 1; }
+    [ "$(stat -c %s "$BOOT_IMG")" -le 67108864 ] \
+        || { echo "BOOT_IMG is larger than the 64 MB boot partition"; exit 1; }
+    BOOT="$BOOT_IMG"
+    BOOT_LABEL="boot image $(basename "$BOOT_IMG")"
+fi
 
 if [ -z "$BOOTLOADER" ] || [ -z "$UBOOT" ] || [ -z "$BOOT" ]; then
     echo "Backup files not found in: $BACKUP"
@@ -184,7 +199,7 @@ flash_write() {
 
 flash_write "Restoring stock bootloader (pre-partition area)" 0 "$BOOTLOADER"
 flash_write "Restoring stock U-Boot (p1)" 0x4000 "$UBOOT"
-flash_write "Restoring stock boot image (p3)" 0x8000 "$BOOT"
+flash_write "Writing $BOOT_LABEL (p3)" 0x8000 "$BOOT"
 
 SIZE=$(du -h "$ROOTFS_IMG" | cut -f1)
 echo "Flashing OpenAstro Linux rootfs to p7 ($SIZE)..."
