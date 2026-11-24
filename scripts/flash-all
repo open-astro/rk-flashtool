@@ -36,50 +36,17 @@ IMAGES_DIR="$REPODIR/images"
 # shellcheck source=lib/release.sh
 . "$REPODIR/scripts/lib/release.sh"
 
-# Search order for rootfs image: arg > current-release cache in images/ > ../asiair-image/
-find_rootfs() {
-    local paths=("$IMAGES_DIR/astrolinux-trixie-rk3568-$RELEASE_TAG" "$(dirname "$REPODIR")/asiair-image/rootfs-stock")
-    for p in "${paths[@]}"; do
-        for ext in .img .img.gz; do
-            [ -f "${p}${ext}" ] && echo "${p}${ext}" && return
-        done
-    done
-    return 0  # no image found is not an error (set -e); caller checks for empty output
-}
-
-# Download image from GitHub Releases if not found locally
-download_rootfs() {
-    mkdir -p "$IMAGES_DIR"
-    local dest="$IMAGES_DIR/astrolinux-trixie-rk3568-$RELEASE_TAG.img.gz"
-    echo "OpenAstro Linux $RELEASE_TAG image not found locally. Downloading..." >&2
-    echo "  $RELEASE_URL" >&2
-    echo "" >&2
-    # Download to .part and rename on success so an interrupted download
-    # can never be mistaken for a complete cached image.
-    if command -v wget >/dev/null 2>&1; then
-        wget -O "$dest.part" "$RELEASE_URL" || { rm -f "$dest.part"; echo "Download failed." >&2; exit 1; }
-    elif command -v curl >/dev/null 2>&1; then
-        curl -fL -o "$dest.part" "$RELEASE_URL" || { rm -f "$dest.part"; echo "Download failed." >&2; exit 1; }
-    else
-        echo "ERROR: wget or curl required to download the image." >&2
-        echo "Install one, or download manually:" >&2
-        echo "  mkdir -p images" >&2
-        echo "  wget -O images/astrolinux-trixie-rk3568-$RELEASE_TAG.img.gz $RELEASE_URL" >&2
-        exit 1
-    fi
-    mv "$dest.part" "$dest"
-    echo "" >&2
-    echo "Downloaded: $dest ($(du -h "$dest" | cut -f1))" >&2
-    echo "$dest"
-}
-
 # An explicit image path skips release resolution entirely (no network).
 if [ -n "$1" ]; then
     ROOTFS_ARG="$1"
 else
     resolve_release "$IMAGES_DIR"
-    ROOTFS_ARG="$(find_rootfs)"
-    [ -n "$ROOTFS_ARG" ] || ROOTFS_ARG="$(download_rootfs)"
+    # Sets ROOTFS_IMG and, for a mainline release, BOOT_IMG. A BOOT_IMG given
+    # on the command line still wins.
+    USER_BOOT_IMG="${BOOT_IMG:-}"
+    fetch_release_images "$IMAGES_DIR" || { echo "Download failed."; exit 1; }
+    ROOTFS_ARG="$ROOTFS_IMG"
+    [ -n "$USER_BOOT_IMG" ] && BOOT_IMG="$USER_BOOT_IMG"
 fi
 
 if [ ! -f "$TOOL" ] || [ ! -x "$TOOL" ]; then  # -f: a nested clone dir named rk-flashtool passes -x

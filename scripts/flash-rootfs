@@ -11,7 +11,13 @@ fi
 # Flash a rootfs image to ASIAIR Plus partition 7.
 # Accepts both raw .img and compressed .img.gz files.
 #
+# With no image argument it uses the current release (images/ cache or GitHub).
+# A mainline-kernel release also carries a p3 boot image, which is written too
+# so kernel and rootfs always match. For an explicit image, BOOT_IMG=<file>
+# does the same. Stock releases leave p3 untouched.
+#
 # Usage: sudo scripts/flash-rootfs [--no-wifi] [rootfs-image]
+#        sudo BOOT_IMG=boot.img scripts/flash-rootfs rootfs.img.gz
 #   --no-wifi  skip the WiFi hotspot setup (also: OPENASTRO_WIFI=no); the
 #              hotspot is otherwise enabled by default with the fleet defaults
 #              (customize via OPENASTRO_SSID / OPENASTRO_PSK / OPENASTRO_COUNTRY)
@@ -26,41 +32,6 @@ IMAGES_DIR="$REPODIR/images"
 
 # pick_workdir() is provided by scripts/lib/wifi.sh (sourced above).
 
-# Search order for rootfs image: arg > current-release cache in images/ > ../asiair-image/
-find_rootfs() {
-    local paths=("$IMAGES_DIR/astrolinux-trixie-rk3568-$RELEASE_TAG" "$(dirname "$REPODIR")/asiair-image/rootfs-stock")
-    for p in "${paths[@]}"; do
-        for ext in .img .img.gz; do
-            [ -f "${p}${ext}" ] && echo "${p}${ext}" && return
-        done
-    done
-    return 0  # no image found is not an error (set -e); caller checks for empty output
-}
-
-download_rootfs() {
-    mkdir -p "$IMAGES_DIR"
-    local dest="$IMAGES_DIR/astrolinux-trixie-rk3568-$RELEASE_TAG.img.gz"
-    echo "OpenAstro Linux $RELEASE_TAG image not found locally. Downloading..." >&2
-    echo "  $RELEASE_URL" >&2
-    echo "" >&2
-    # Download to .part and rename on success so an interrupted download
-    # can never be mistaken for a complete cached image.
-    if command -v wget >/dev/null 2>&1; then
-        wget -O "$dest.part" "$RELEASE_URL" || { rm -f "$dest.part"; echo "Download failed." >&2; exit 1; }
-    elif command -v curl >/dev/null 2>&1; then
-        curl -fL -o "$dest.part" "$RELEASE_URL" || { rm -f "$dest.part"; echo "Download failed." >&2; exit 1; }
-    else
-        echo "ERROR: wget or curl required. Download manually:" >&2
-        echo "  mkdir -p images" >&2
-        echo "  wget -O images/astrolinux-trixie-rk3568-$RELEASE_TAG.img.gz $RELEASE_URL" >&2
-        exit 1
-    fi
-    mv "$dest.part" "$dest"
-    echo "" >&2
-    echo "Downloaded: $dest ($(du -h "$dest" | cut -f1))" >&2
-    echo "$dest"
-}
-
 # Pull out --no-wifi from anywhere in the args; leave the positional image arg.
 ARGS=()
 for a in "$@"; do
@@ -74,10 +45,16 @@ set -- "${ARGS[@]}"
 # An explicit image path skips release resolution entirely (no network).
 if [ -n "$1" ]; then
     ROOTFS_ARG="$1"
+    BOOT_IMG="${BOOT_IMG:-}"
+    if [ -n "$BOOT_IMG" ]; then
+        [ -f "$BOOT_IMG" ] || { echo "BOOT_IMG not found: $BOOT_IMG"; exit 1; }
+        _release_check_boot "$BOOT_IMG" || exit 1
+    fi
 else
     resolve_release "$IMAGES_DIR"
-    ROOTFS_ARG="$(find_rootfs)"
-    [ -n "$ROOTFS_ARG" ] || ROOTFS_ARG="$(download_rootfs)"
+    # Sets ROOTFS_IMG and, for a mainline release, BOOT_IMG
+    fetch_release_images "$IMAGES_DIR" || { echo "Download failed."; exit 1; }
+    ROOTFS_ARG="$ROOTFS_IMG"
 fi
 
 if [ ! -f "$TOOL" ] || [ ! -x "$TOOL" ]; then  # -f: a nested clone dir named rk-flashtool passes -x
@@ -126,6 +103,12 @@ $TOOL ld 2>/dev/null | grep -q "Loader\|Maskrom" || {
     echo "No ASIAIR found in Loader or Maskrom mode."
     exit 1
 }
+
+if [ -n "$BOOT_IMG" ]; then
+    echo "Writing kernel boot image to p3 (sector 0x8000): $(basename "$BOOT_IMG")"
+    $TOOL wl 0x8000 "$BOOT_IMG"
+    sleep 2
+fi
 
 SIZE=$(du -h "$ROOTFS_IMG" | cut -f1)
 echo "Flashing rootfs to p7 (sector 0x1BD38000)..."

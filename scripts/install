@@ -11,7 +11,10 @@ fi
 # OpenAstro Linux Installer
 # One-script setup: jailbreak → backup → download image → flash rootfs.
 #
-# Only replaces partition 7 (rootfs). The stock boot chain is never touched.
+# Writes the rootfs (p7) and the matching kernel boot image (p3): the release's
+# mainline boot image, or the stock p3 from your backup for a stock release.
+# The bootloader and U-Boot are never touched.
+# OPENASTRO_RELEASE=<tag> installs a specific release (e.g. a beta).
 #
 # Usage:
 #   sudo scripts/install              # full: jailbreak + backup + download + flash
@@ -280,45 +283,26 @@ echo "  $STEP - Download OpenAstro Linux"
 echo "========================================"
 echo ""
 
-find_rootfs() {
-    local paths=("$IMAGES_DIR/astrolinux-trixie-rk3568-$RELEASE_TAG" "$(dirname "$REPODIR")/asiair-image/rootfs-stock")
-    for p in "${paths[@]}"; do
-        for ext in .img .img.gz; do
-            [ -f "${p}${ext}" ] && echo "${p}${ext}" && return 0
-        done
-    done
-    return 0
+# Sets RELEASE_FLAVOR, ROOTFS_IMG, and BOOT_IMG (mainline releases only);
+# reuses images/ cache or downloads from the GitHub release.
+fetch_release_images "$IMAGES_DIR" || {
+    echo "Download failed."
+    exit 1
 }
+echo "Image: $ROOTFS_IMG ($(du -h "$ROOTFS_IMG" | cut -f1))"
 
-ROOTFS_IMG="$(find_rootfs)"
-
-if [ -z "$ROOTFS_IMG" ]; then
-    if ! command -v wget >/dev/null 2>&1 && ! command -v curl >/dev/null 2>&1; then
-        echo "ERROR: wget or curl is required to download the image."
-        echo "  sudo apt install wget curl"
-        exit 1
-    fi
-    echo "Downloading OpenAstro Linux image..."
-    echo "  $RELEASE_URL"
-    echo ""
-    mkdir -p "$IMAGES_DIR"
-    local_dest="$IMAGES_DIR/astrolinux-trixie-rk3568-$RELEASE_TAG.img.gz"
-    # Download to .part and rename on success so an interrupted download
-    # can never be mistaken for a complete cached image.
-    if command -v wget >/dev/null 2>&1; then
-        wget -O "$local_dest.part" "$RELEASE_URL" || { rm -f "$local_dest.part"; echo "Download failed."; exit 1; }
-    elif command -v curl >/dev/null 2>&1; then
-        curl -fL -o "$local_dest.part" "$RELEASE_URL" || { rm -f "$local_dest.part"; echo "Download failed."; exit 1; }
-    else
-        echo "ERROR: wget or curl required."
-        exit 1
-    fi
-    mv "$local_dest.part" "$local_dest"
-    ROOTFS_IMG="$local_dest"
-    echo ""
-    echo "Downloaded: $(du -h "$ROOTFS_IMG" | cut -f1)"
+# The kernel in p3 must match the rootfs: a mainline release ships its own
+# boot image; a stock release needs ZWO's stock p3 back (the unit may have
+# run a mainline image before). Resolve it now, before any flashing.
+if [ "$RELEASE_FLAVOR" = mainline ]; then
+    P3_IMG="$BOOT_IMG"
+    P3_LABEL="mainline kernel boot image"
 else
-    echo "Found image: $ROOTFS_IMG ($(du -h "$ROOTFS_IMG" | cut -f1))"
+    P3_IMG="$(ls -1t "$BACKUP_DIR"/*_p3_boot.bin 2>/dev/null | head -1)"
+    P3_LABEL="stock kernel boot image (from your backup)"
+    if [ -z "$P3_IMG" ]; then
+        echo "NOTE: no *_p3_boot.bin in $BACKUP_DIR; leaving p3 as it is."
+    fi
 fi
 
 # Decompress if needed
@@ -357,7 +341,7 @@ if $FLASH_ONLY; then STEP="Step 2/2"; else STEP="Step 4/4"; fi
 
 echo ""
 echo "========================================"
-echo "  $STEP - Flash Rootfs"
+echo "  $STEP - Flash OpenAstro Linux"
 echo "========================================"
 echo ""
 echo "Now you need to put the ASIAIR into Loader mode:"
@@ -408,6 +392,19 @@ if [ "$MODE" = "Maskrom" ]; then
     sleep 2
 fi
 
+if [ -n "$P3_IMG" ]; then
+    echo ""
+    echo "Writing $P3_LABEL to partition 3..."
+    $TOOL wl 0x8000 "$P3_IMG" || {
+        echo ""
+        echo "ERROR: Boot image (p3) write failed. Nothing else was written."
+        echo "Power cycle the ASIAIR into Loader mode and run the installer again"
+        echo "with --flash-only."
+        exit 1
+    }
+    sleep 2
+fi
+
 SIZE=$(du -h "$ROOTFS_IMG" | cut -f1)
 echo ""
 echo "Flashing OpenAstro Linux rootfs to partition 7 ($SIZE)..."
@@ -430,7 +427,7 @@ echo "========================================"
 echo "  OpenAstro Linux installed successfully!"
 echo "========================================"
 echo ""
-echo "  Hostname: astro"
+echo "  Hostname: openastro"
 echo "  User:     astro"
 echo "  Password: astro"
 echo "  SSH:      enabled"
