@@ -363,8 +363,10 @@ echo ""
 echo "Now you need to put the ASIAIR into Loader mode:"
 echo ""
 echo "  1. Power off the ASIAIR completely"
-echo "  2. Connect USB-C cable between ASIAIR and this PC"
-echo "  3. Hold the reset button while powering on"
+echo "  2. Hold down the reset button (keep holding it)"
+echo "  3. Plug the USB-C cable into the ASIAIR and this PC"
+echo "  4. Plug in the 12V power and turn the ASIAIR on, still holding reset"
+echo "  5. Release after about 5 seconds"
 
 prompt_wait "Press Enter when the ASIAIR is in Loader mode"
 

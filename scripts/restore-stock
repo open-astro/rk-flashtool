@@ -12,7 +12,7 @@ fi
 #
 # Two modes:
 #   1. Default - restores the stock kernel (p3) and rootfs (p7). Works in
-#      Loader mode (hold the reset button while powering on). p3 is included
+#      Loader mode (hold reset, plug in USB, then power on). p3 is included
 #      because a mainline-kernel image replaces it; the stock rootfs only boots
 #      with the stock kernel.
 #   2. Full restore - restores bootloader + all partitions. For recovery from a
@@ -193,7 +193,9 @@ else
             echo "No ASIAIR found in Loader mode. rk-flashtool said:"
             echo "  $LD_OUT"
             echo ""
-            echo "To enter Loader mode: hold the reset button while powering on."
+            echo "To enter Loader mode: hold down the reset button, plug in USB,"
+            echo "then plug in power and turn the ASIAIR on, still holding reset."
+            echo "Release after about 5 seconds."
         fi
         exit 1
     fi

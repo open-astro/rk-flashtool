@@ -19,13 +19,22 @@
 ### Entering Loader Mode
 
 1. Power off the ASIAIR Plus completely
-2. Connect USB-C to USB-A cable between the ASIAIR and the PC
-3. Hold the reset button on the ASIAIR
-4. Plug in the 12V DC power while continuing to hold reset
-5. Power on the device while continuing to hold reset
-6. Hold reset for 5 seconds, then release
+2. Hold down the reset button and keep holding it
+3. Plug the USB-C cable into the ASIAIR and the PC
+4. Plug in the 12V DC power and turn the ASIAIR on, still holding reset
+5. Release after about 5 seconds
 
-The device should appear as `Vid=0x2207,Pid=0x350a` in `sudo ./rk-flashtool ld`.
+The device should appear as `Vid=0x2207,Pid=0x350a ... Loader` in `sudo ./rk-flashtool ld`
+(`lsusb` shows "Fuzhou Rockchip ... USB download gadget"). When a flash finishes and
+the device resets, it beeps once the OS is up and working.
+
+**How it works (verified 2026-11-24):** the reset button is wired to SARADC channel 0
+(1.8 V idle, ~26 mV pressed). The stock Rockchip U-Boot (`next-dev` `dde42ec6a2`)
+enters download mode in `setup_download_mode()` when KEY_VOLUMEUP is read through an
+`adc-keys` node **in the kernel DTB** and the USB2 PHY (looked up by the node name
+prefix `usb2-phy`) reports VBUS. If no VBUS is seen, it boots the recovery partition
+instead. Reset-button Loader mode was confirmed on the mainline 6.18 image, whose DT
+declares that `adc-keys` node.
 
 ### Entering Maskrom Mode
 

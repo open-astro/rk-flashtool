@@ -53,7 +53,7 @@ The installer handles everything automatically:
 2. **Backs up** all partitions over SSH (~7.7 GB) - your only way back to stock
 3. **Downloads** the OpenAstro Linux image from GitHub Releases
 4. **Sets up the WiFi hotspot** - enabled by default like the other OpenAstro boards: the unit broadcasts its own network (like the stock ASIAIR); join it and reach the unit at `astro@172.24.1.1`. SSID `OpenAstro-XXXX` (XXXX = last 4 of the WiFi MAC), password `12345678`; change it later from the AlpacaBridge portal, override with `OPENASTRO_SSID`/`OPENASTRO_PSK`/`OPENASTRO_COUNTRY`, or set `OPENASTRO_WIFI=no` to skip and use wired Ethernet only
-5. **Pauses** and asks you to enter Loader mode (hold the reset button while powering on)
+5. **Pauses** and asks you to enter Loader mode (see [Entering Loader mode](#entering-loader-mode))
 6. **Flashes** the stock boot chain from your backup + OpenAstro Linux rootfs
 
 Total time: ~15 minutes (mostly waiting for the backup transfer).
@@ -91,18 +91,29 @@ from the AlpacaBridge portal's WiFi card.
 
 > The hotspot uses 5 GHz channel 36 (matching the other OpenAstro boards), verified working on ASIAIR hardware with the stock bcmdhd driver (2026-08-09 live test, `AP-ENABLED` at 5180 MHz). If your regulatory domain disallows it, switch the profile to 2.4 GHz (`band=bg`, `channel=6`) in `/etc/NetworkManager/system-connections/openastro-ap.nmconnection`, or use the AlpacaBridge web portal's WiFi card.
 
+### Entering Loader mode
+
+1. **Hold down the reset button** and keep holding it
+2. **Plug the USB-C cable** into the ASIAIR and this PC
+3. **Plug in the 12V power and turn the ASIAIR on**, still holding reset
+4. Release after about 5 seconds
+
+Check with `./rk-flashtool ld`: it should list `Vid=0x2207,Pid=0x350a ... Loader`.
+When a flash or restore finishes, the device resets and boots; it beeps once
+the OS is up and working.
+
 ### Restore Stock Firmware
 
 To go back to the original ZWO firmware at any time:
 
-1. Enter Loader mode (hold reset button while powering on)
+1. Enter [Loader mode](#entering-loader-mode)
 2. Run:
 
 ```bash
 sudo scripts/restore-stock
 ```
 
-This restores just the rootfs (partition 7) from your backup. The boot chain was never modified, so only the rootfs needs to be restored.
+This restores the stock kernel (partition 3) and rootfs (partition 7) from your backup. The bootloader is never modified.
 
 If the device is bricked and won't enter Loader mode, use the full restore (requires Maskrom - eMMC shorting):
 
@@ -209,7 +220,7 @@ sudo ./rk-flashtool -h
 
 ### Need to recover from a bad flash
 
-If the device won't boot at all, enter Maskrom mode and run `sudo scripts/restore-stock`. The stock boot chain in your backup will always work.
+If the device won't boot at all, first try [Loader mode](#entering-loader-mode) and `sudo scripts/restore-stock`. If it won't enter Loader mode, enter Maskrom mode and run `sudo scripts/restore-stock --full`. The stock boot chain in your backup will always work.
 
 ## License
 
