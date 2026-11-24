@@ -11,9 +11,10 @@ set -e
 
 REPODIR="$(cd "$(dirname "$0")/../.." && pwd)"
 BASEDIR="$(dirname "$REPODIR")"
-ROOTFS="$BASEDIR/asiair-rootfs"
+ROOTFS="${ROOTFS:-$BASEDIR/asiair-rootfs}"
 OUTDIR="$BASEDIR/asiair-image"
-ROOTFS_IMG="$OUTDIR/rootfs-stock.img"
+ROOTFS_IMG="${ROOTFS_IMG:-$OUTDIR/rootfs-stock.img}"
+OUTDIR="$(dirname "$ROOTFS_IMG")"
 ROOTFS_IMG_MB=4096
 
 if [ ! -d "$ROOTFS/etc" ]; then
