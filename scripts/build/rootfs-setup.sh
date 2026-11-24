@@ -1,23 +1,46 @@
 #!/bin/bash
 set -e
 
-# Set up a Debian Trixie rootfs for the ASIAIR Plus (stock kernel approach).
+# Set up a Debian Trixie rootfs for the ASIAIR Plus.
+#
+# KERNEL_FLAVOR selects which kernel the rootfs is built for:
+#   stock    (default) ZWO's 4.19.219 BSP kernel: modules + firmware copied
+#            from the stock rootfs, ZWO's pwm_gpio driver.
+#   mainline Armbian 26.8.1 6.18.43-current-rockchip64 (pinned, SHA256
+#            checked): its modules, the OpenAstro pwm_gpio_compat module,
+#            and brcmfmac firmware names. Pair it with the mainline p3 boot
+#            image (scripts/build/mainline-boot-image.sh).
 #
 # Prerequisites:
 #   - Trixie rootfs created via debootstrap at $ROOTFS
-#   - Stock rootfs backup mounted (to extract modules + firmware)
+#   - Stock rootfs backup (firmware donor; also the module donor for stock)
 #
-# Usage: sudo scripts/build/rootfs-setup.sh
+# Usage: sudo [KERNEL_FLAVOR=mainline] scripts/build/rootfs-setup.sh
+# Env:   ROOTFS, STOCK_ROOTFS_IMG, ARMBIAN_KERNEL_DEB (skip the download)
 
 REPODIR="$(cd "$(dirname "$0")/../.." && pwd)"
 BASEDIR="$(dirname "$REPODIR")"
-ROOTFS="$BASEDIR/asiair-rootfs"
+ROOTFS="${ROOTFS:-$BASEDIR/asiair-rootfs}"
 HWDIR="$REPODIR/hardware/asiair-plus-rk3568-256g"
 BACKUP="$HWDIR/asiair-backup"
-STOCK_ROOTFS_IMG="$BACKUP/20260423_p7_rootfs.bin"
+STOCK_ROOTFS_IMG="${STOCK_ROOTFS_IMG:-$BACKUP/20260423_p7_rootfs.bin}"
+
+KERNEL_FLAVOR="${KERNEL_FLAVOR:-stock}"
+case "$KERNEL_FLAVOR" in stock|mainline) ;; *)
+    echo "ERROR: KERNEL_FLAVOR must be 'stock' or 'mainline' (got '$KERNEL_FLAVOR')"; exit 1 ;;
+esac
+# Mainline kernel: the exact Armbian build the recovered DTB and
+# pwm_gpio_compat.ko were made for (Image byte-identical to the one proven
+# on hardware, 2026-11-24).
+MAINLINE_KVER="6.18.43-current-rockchip64"
+MAINLINE_DEB_NAME="linux-image-current-rockchip64_26.8.1_arm64__6.18.43-S7b92-D16a2-P2f29-C40fc-H2153-HK01ba-Vc222-Be92d-R448a.deb"
+MAINLINE_DEB_URL="https://apt.armbian.com/pool/main/l/linux-6.18.43/$MAINLINE_DEB_NAME"
+MAINLINE_DEB_SHA256="cb29003f4a1ae5b9394d6c9dda9271d5295fc7838312d23700de947ef77a3764"
+MAINLINE_DIR="$HWDIR/mainline/6.18.43-recovered"
 
 echo "Base directory: $BASEDIR"
 echo "Rootfs:         $ROOTFS"
+echo "Kernel flavor:  $KERNEL_FLAVOR"
 
 if [ ! -d "$ROOTFS/etc" ]; then
     echo "ERROR: Rootfs not found at $ROOTFS"
@@ -25,7 +48,26 @@ if [ ! -d "$ROOTFS/etc" ]; then
     exit 1
 fi
 
-echo "=== Setting up ASIAIR Debian rootfs (stock kernel) ==="
+echo "=== Setting up ASIAIR Debian rootfs ($KERNEL_FLAVOR kernel) ==="
+
+# Fetch + verify the mainline kernel package up front, before anything is
+# mounted, so a network or checksum failure leaves nothing behind.
+if [ "$KERNEL_FLAVOR" = mainline ]; then
+    if [ -z "${ARMBIAN_KERNEL_DEB:-}" ]; then
+        KCACHE="$BASEDIR/asiair-kernel-cache"
+        mkdir -p "$KCACHE"
+        ARMBIAN_KERNEL_DEB="$KCACHE/$MAINLINE_DEB_NAME"
+        if [ ! -f "$ARMBIAN_KERNEL_DEB" ]; then
+            echo "Downloading Armbian kernel $MAINLINE_KVER..."
+            curl -fL --retry 3 -o "$ARMBIAN_KERNEL_DEB.part" "$MAINLINE_DEB_URL"
+            mv "$ARMBIAN_KERNEL_DEB.part" "$ARMBIAN_KERNEL_DEB"
+        fi
+    fi
+    echo "$MAINLINE_DEB_SHA256  $ARMBIAN_KERNEL_DEB" | sha256sum -c --quiet \
+        || { echo "ERROR: $ARMBIAN_KERNEL_DEB failed its SHA256 check"; exit 1; }
+    [ -f "$MAINLINE_DIR/pwm_gpio_compat.ko" ] \
+        || { echo "ERROR: missing $MAINLINE_DIR/pwm_gpio_compat.ko"; exit 1; }
+fi
 
 # --- Mount stock rootfs to extract modules + firmware ---
 STOCKMNT="/tmp/asiair-stock-rootfs"
@@ -88,11 +130,15 @@ ff02::2		ip6-allrouters
 EOF
 
 # --- fstab (stock partition layout) ---
+# By GPT partition name, not /dev/mmcblk0pN: the names (rootfs, swap,
+# asiair) are identical on every unit, and they don't depend on which
+# mmcblk number the kernel gives the eMMC. A device path that never appears
+# makes systemd wait its full 90 s job timeout at every boot.
 cat > "$ROOTFS/etc/fstab" << 'EOF'
-# <file system>    <mount point>  <type>  <options>                        <dump> <pass>
-/dev/mmcblk0p7     /              ext4    defaults,noatime                 0      1
-/dev/mmcblk0p8     none           swap    sw                               0      0
-/dev/mmcblk0p5     /mnt/data      vfat    uid=1000,gid=1000,nofail,noauto  0      0
+# <file system>      <mount point>  <type>  <options>                        <dump> <pass>
+PARTLABEL=rootfs     /              ext4    defaults,noatime                 0      1
+PARTLABEL=swap       none           swap    sw,nofail                        0      0
+PARTLABEL=asiair     /mnt/data      vfat    uid=1000,gid=1000,nofail,noauto  0      0
 EOF
 mkdir -p "$ROOTFS/mnt/data"
 
@@ -270,15 +316,35 @@ if ! chroot "$ROOTFS" dpkg -s systemd-timesyncd >/dev/null 2>&1; then
 fi
 chroot "$ROOTFS" /bin/bash -c "systemctl enable systemd-timesyncd" || true
 
-# --- Install stock kernel modules (4.19.219) ---
-echo "Installing stock kernel modules..."
 # debootstrap installs no kernel, so /lib/modules may not exist; without it
-# cp -a would create lib/modules AS the 4.19.219 dir (flattened, modprobe
+# cp -a would create lib/modules AS the version dir (flattened, modprobe
 # then finds nothing and WiFi never comes up).
 mkdir -p "$ROOTFS/lib/modules"
 rm -rf "$ROOTFS/lib/modules/"*
-cp -a "$STOCKMNT/lib/modules/4.19.219" "$ROOTFS/lib/modules/"
-rm -f "$ROOTFS/lib/modules/4.19.219/build"
+if [ "$KERNEL_FLAVOR" = stock ]; then
+    # --- Install stock kernel modules (4.19.219) ---
+    echo "Installing stock kernel modules..."
+    cp -a "$STOCKMNT/lib/modules/4.19.219" "$ROOTFS/lib/modules/"
+    rm -f "$ROOTFS/lib/modules/4.19.219/build"
+    KMOD_SUMMARY="stock 4.19.219"
+else
+    # --- Install mainline kernel modules (Armbian 6.18.43) ---
+    echo "Installing Armbian $MAINLINE_KVER modules..."
+    KX="$(mktemp -d)"
+    dpkg-deb -x "$ARMBIAN_KERNEL_DEB" "$KX"
+    cp -a "$KX/lib/modules/$MAINLINE_KVER" "$ROOTFS/lib/modules/"
+    rm -f "$ROOTFS/lib/modules/$MAINLINE_KVER/build" "$ROOTFS/lib/modules/$MAINLINE_KVER/source"
+    # Kernel config + System.map in /boot, for tooling that looks for them.
+    # (The kernel itself boots from p3, not from /boot.)
+    mkdir -p "$ROOTFS/boot"
+    cp "$KX/boot/config-$MAINLINE_KVER" "$KX/boot/System.map-$MAINLINE_KVER" "$ROOTFS/boot/"
+    rm -rf "$KX"
+    # OpenAstro clean-room /dev/pwm-gpio-misc driver (DC ports, buzzer, USB power)
+    install -D -m 644 "$MAINLINE_DIR/pwm_gpio_compat.ko" \
+        "$ROOTFS/lib/modules/$MAINLINE_KVER/extra/pwm_gpio_compat.ko"
+    chroot "$ROOTFS" depmod -a "$MAINLINE_KVER"
+    KMOD_SUMMARY="Armbian $MAINLINE_KVER + pwm_gpio_compat"
+fi
 
 # --- Install stock firmware ---
 echo "Installing stock firmware..."
@@ -307,6 +373,19 @@ cp "$FW_SRC/BCM4345C5.hcd"              "$FW_DST/BCM4345C5.hcd"
 sed -i 's/^ccode=.*/ccode=US/' \
     "$ROOTFS/lib/firmware/nvram_ap6256.txt" \
     "$FW_DST/nvram_ap6256.txt" "$FW_DST/nvram.txt"
+
+# Mainline brcmfmac / hci_uart-bcm look up firmware by chip name under
+# /lib/firmware/brcm/, trying the board-specific name (from the DT model,
+# "zwo,asiair-plus") first. Point them at the stock AP6256 blobs; verified
+# working on hardware 2026-11-24 (2.4 + 5 GHz scan, AP mode, BT 5.2).
+if [ "$KERNEL_FLAVOR" = mainline ]; then
+    mkdir -p "$ROOTFS/lib/firmware/brcm"
+    for n in brcmfmac43456-sdio brcmfmac43456-sdio.zwo,asiair-plus; do
+        ln -sf ../fw_bcm43456c5_ag.bin "$ROOTFS/lib/firmware/brcm/$n.bin"
+        ln -sf ../nvram_ap6256.txt     "$ROOTFS/lib/firmware/brcm/$n.txt"
+    done
+    ln -sf ../BCM4345C5.hcd "$ROOTFS/lib/firmware/brcm/BCM4345C5.hcd"
+fi
 
 # --- AlpacaBridge (from apt.openastro.net) ---
 # On by default since AlpacaBridge 3.4.0 shipped the WiFi manager. Needs
@@ -358,8 +437,14 @@ if [ "$INSTALL_ALPACABRIDGE" = yes ]; then
 fi
 
 # --- Auto-load pwm_gpio module ---
+# Both provide /dev/pwm-gpio-misc with the same ioctl ABI, so openastro-beep
+# and AlpacaBridge work unchanged on either kernel.
 mkdir -p "$ROOTFS/etc/modules-load.d"
-echo "pwm_gpio" > "$ROOTFS/etc/modules-load.d/pwm-gpio.conf"
+if [ "$KERNEL_FLAVOR" = stock ]; then
+    echo "pwm_gpio" > "$ROOTFS/etc/modules-load.d/pwm-gpio.conf"
+else
+    echo "pwm_gpio_compat" > "$ROOTFS/etc/modules-load.d/pwm-gpio-compat.conf"
+fi
 
 # --- Buzzer: OpenAstro jingle on boot ---
 # The AirPlus piezo is index 3 (GPIO0_B7) behind ZWO's pwm_gpio driver;
@@ -393,7 +478,7 @@ echo "  Hostname: openastro"
 echo "  User: astro / astro"
 echo "  Root: root / astro (SSH root login disabled)"
 echo "  SSH: enabled, unique host keys generated on first boot"
-echo "  Kernel modules: stock 4.19.219"
+echo "  Kernel modules: $KMOD_SUMMARY"
 echo "  Firmware: stock (BCM43456 WiFi/BT)"
 echo ""
 echo "Next: build rootfs image with asiair-stock-flash.sh or manually"
