@@ -117,11 +117,37 @@ def check_port(ip, port, timeout=0.5):
         return False
 
 
+# Container / VM / VPN interfaces never have the ASIAIR on them. A dev box
+# can have 100+ Docker bridges (br-*, docker0), each a full /24 to sweep.
+VIRTUAL_IFACE_PREFIXES = ('lo', 'docker', 'br-', 'veth', 'virbr', 'vnet',
+                          'vmnet', 'vboxnet', 'tun', 'tap', 'wg', 'zt',
+                          'tailscale', 'podman', 'cni', 'flannel', 'cali',
+                          'lxc', 'lxd', 'incus')
+
+
+def default_route_iface():
+    """Interface of the IPv4 default route (Linux), or None."""
+    try:
+        with open('/proc/net/route') as f:
+            for line in f.readlines()[1:]:
+                fields = line.split()
+                if len(fields) > 1 and fields[1] == '00000000':
+                    return fields[0]
+    except OSError:
+        pass
+    return None
+
+
 def get_local_subnets():
     subnets = []
     try:
         import netifaces
-        for iface in netifaces.interfaces():
+        default_iface = default_route_iface()
+        ifaces = [i for i in netifaces.interfaces()
+                  if not i.startswith(VIRTUAL_IFACE_PREFIXES)]
+        # The LAN with the default route is where the ASIAIR almost always is.
+        ifaces.sort(key=lambda i: i != default_iface)
+        for iface in ifaces:
             addrs = netifaces.ifaddresses(iface)
             if netifaces.AF_INET in addrs:
                 for addr_info in addrs[netifaces.AF_INET]:
@@ -213,6 +239,13 @@ def scan_network():
                     print(f'    Open ports: {", ".join(str(p) for p in ports)}')
                     for detail in info['details']:
                         print(f'    {detail}')
+
+        # Found a confirmed ASIAIR on this subnet: no need to sweep the rest.
+        if any(d[3]['is_asiair'] for d in found_devices):
+            remaining = len(subnets) - subnets.index((local_ip, netmask)) - 1
+            if remaining:
+                print(f'ASIAIR found; skipping {remaining} other subnet(s).')
+            break
 
     return found_devices
 
