@@ -61,6 +61,27 @@ _wifi_write_profile() {
     local uuid
     uuid="$(cat /proc/sys/kernel/random/uuid 2>/dev/null || echo "00000000-0000-0000-0000-000000000000")"
 
+    # Mainline (brcmfmac): pin WPA2-only with CCMP. key-mgmt alone leaves
+    # proto/pairwise/group to wpa_supplicant's defaults (WPA+RSN, CCMP+TKIP,
+    # TKIP group key), and brcmfmac programs the firmware from the WPA IE
+    # whenever one is present, so the AP came up WPA1-only (TKIP group).
+    # pmf=1 is NM's "disable" (0 default, 1 disable, 2 optional, 3 required).
+    # It is needed: NM sets wpa_supplicant's global pmf to 1 (optional) and
+    # writes a per-network ieee80211w only for disable/required, and
+    # Debian's wpasupplicant 2:2.10-24 (patch 0016, #1057494) makes an AP
+    # network with no ieee80211w inherit that global pmf. With the WPA IE
+    # gone, brcmfmac would then take the RSN path with MFPC set: mfp=capable,
+    # the 'bip' iovar and a BIP-CMAC IGTK, a path known to break NM hotspots
+    # (Fedora #2328551 "key setting validation failed", #2057352 clients
+    # cannot join; both fixed by wifi-sec.pmf disable). pmf=1 makes NM write
+    # ieee80211w=0, so the AP has no PMF and brcmfmac sets mfp=none; it also
+    # keeps NM from adding SAE in AP mode. The stock bcmdhd keyfile is left
+    # unchanged.
+    local sec_extra=""
+    if _wifi_image_is_mainline "$mnt"; then
+        sec_extra=$'proto=rsn;\npairwise=ccmp;\ngroup=ccmp;\npmf=1\n'
+    fi
+
     mkdir -p "$dir"
     # mode=ap makes wlan0 a hotspot; ipv4 method=shared runs DHCP + NAT so
     # clients get an address (172.24.1.x) and reach the unit at 172.24.1.1.
@@ -86,7 +107,7 @@ channel=36
 
 [wifi-security]
 key-mgmt=wpa-psk
-psk=$psk
+${sec_extra}psk=$psk
 
 [ipv4]
 method=shared
