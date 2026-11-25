@@ -467,6 +467,32 @@ WantedBy=multi-user.target
 EOF
 chroot "$ROOTFS" /bin/bash -c "systemctl enable openastro-beep.service" >/dev/null 2>&1
 
+# --- USB port power (mainline only) ---
+# The USB power enables are pwm_gpio idx 8-11 and must be driven high as
+# outputs. pwm_gpio_compat leaves them as inputs, where they read high from
+# the DT pull-ups but the ports stay unpowered. This can't be done in the DT
+# (see rk3568-asiair-plus-fixed.dts, usb-power-pins). The stock ZWO driver
+# handles this itself on 4.19.
+if [ "$KERNEL_FLAVOR" = mainline ]; then
+    install -m 755 "$REPODIR/scripts/build/openastro-usb-power" \
+        "$ROOTFS/usr/local/sbin/openastro-usb-power"
+    cat > "$ROOTFS/etc/systemd/system/openastro-usb-power.service" << 'EOF'
+[Unit]
+Description=OpenAstro: power the ASIAIR Plus USB ports
+After=systemd-modules-load.service systemd-udevd.service
+Before=alpacabridge.service openastroara-server.service openastro-beep.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/openastro-usb-power on
+
+[Install]
+WantedBy=multi-user.target
+EOF
+    chroot "$ROOTFS" /bin/bash -c "systemctl enable openastro-usb-power.service" >/dev/null 2>&1
+fi
+
 # --- Cleanup ---
 cleanup_binds
 trap - EXIT

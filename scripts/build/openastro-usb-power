@@ -1,0 +1,49 @@
+#!/usr/bin/perl
+# Power the ASIAIR Plus (RK3568) USB ports on the mainline kernel.
+#
+# The four USB port power enables (GPIO0_C2/A6/B0/C7) are pwm_gpio indices
+# 8-11 behind /dev/pwm-gpio-misc. They must be driven as outputs high: a
+# pull-up alone reads high but leaves the ports unpowered. They can't be set
+# from the device tree, because pwm_gpio_compat claims them and switches them
+# to inputs when it loads, so this runs after the module is up.
+#
+# usage: openastro-usb-power [on|off] [index...]   (default: on 8 9 10 11)
+use strict;
+use warnings;
+
+use constant {
+    DEV       => '/dev/pwm-gpio-misc',
+    SET_MODE  => 0x40084302,   # work_mode_t  { index, mode }
+    SET_LEVEL => 0x40084308,   # gpio_level_t { index, level }
+    MODE_GPIO => 1,
+};
+
+my $level = 1;
+if (@ARGV && $ARGV[0] =~ /^(on|off)$/) {
+    $level = (shift @ARGV) eq 'on' ? 1 : 0;
+}
+my @idx = @ARGV ? @ARGV : (8, 9, 10, 11);
+for (@idx) {
+    die "bad USB power index '$_' (expected 8-11)\n" unless /^(8|9|10|11)$/;
+}
+
+# The misc device node can show up a moment after the module loads.
+my $fd;
+for (1 .. 50) {
+    last if open($fd, '+<', DEV);
+    undef $fd;
+    select(undef, undef, undef, 0.1);
+}
+die "open " . DEV . ": $!\n" unless $fd;
+
+my $rc = 0;
+for my $i (@idx) {
+    unless (ioctl($fd, SET_MODE, pack('ll', $i, MODE_GPIO))) {
+        warn "set mode idx $i: $!\n"; $rc = 1; next;
+    }
+    unless (ioctl($fd, SET_LEVEL, pack('ll', $i, $level))) {
+        warn "set level idx $i: $!\n"; $rc = 1;
+    }
+}
+close($fd);
+exit $rc;
