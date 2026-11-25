@@ -560,6 +560,31 @@ EOF
     chroot "$ROOTFS" /bin/bash -c "systemctl enable openastro-usb-power.service" >/dev/null 2>&1
 fi
 
+# --- Backup GPT (mainline only) ---
+# The eMMC's backup GPT can be a stale copy of an older layout, and the stock
+# U-Boot rewrites a damaged primary GPT from it. openastro-gpt-backup
+# rewrites only the 33 backup sectors, from a primary that validates and
+# matches the kernel's partitions, and does nothing when they already agree.
+if [ "$KERNEL_FLAVOR" = mainline ]; then
+    install -m 755 "$REPODIR/scripts/build/openastro-gpt-backup" \
+        "$ROOTFS/usr/local/sbin/openastro-gpt-backup"
+    cat > "$ROOTFS/etc/systemd/system/openastro-gpt-backup.service" << 'EOF'
+[Unit]
+Description=OpenAstro: sync the eMMC backup GPT with the primary
+ConditionVirtualization=!container
+After=local-fs.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/openastro-gpt-backup
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target
+EOF
+    chroot "$ROOTFS" /bin/bash -c "systemctl enable openastro-gpt-backup.service" >/dev/null 2>&1
+fi
+
 # --- Per-unit machine-id (mainline only) ---
 # debootstrap's systemd postinst wrote a machine-id at build time and
 # dbus-daemon's postinst copied it to /var/lib/dbus/machine-id, so every unit

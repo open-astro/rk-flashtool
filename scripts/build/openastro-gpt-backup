@@ -1,0 +1,121 @@
+#!/bin/sh
+# openastro-gpt-backup: make the eMMC's backup GPT match the primary GPT.
+#
+# The backup GPT (last 33 sectors of the eMMC) can describe an older layout:
+# recovery restores the primary by rewriting the 8 MB pre-partition area
+# (restore-stock --full, flashtool-recovery.md), which never touches the end
+# of the disk. Linux only warns ("GPT:... don't match"), but the stock
+# Rockchip U-Boot that boots this image rewrites an invalid primary GPT from
+# the backup at boot ("Repair the Primary gpt table OK!"), which would put
+# the stale layout over p1-p8.
+#
+# Only the 33 backup sectors are ever written, only after the primary GPT has
+# fully validated, every partition ends at or before its last usable LBA, and
+# the kernel's view of the partitions (sysfs) matches it. The primary GPT,
+# the protective MBR and every partition are only ever read. Run at every
+# boot; when the backup already matches the primary it exits without writing.
+#
+# Usage: openastro-gpt-backup [DEVICE]   (default: the disk holding /)
+set -eu
+
+log() { echo "openastro-gpt-backup: $*"; }
+skip() { log "$* - backup GPT left untouched"; exit 0; }
+
+DEV="${1:-}"
+if [ -z "$DEV" ]; then
+    src=$(findmnt -no SOURCE /)
+    pk=$(lsblk -no PKNAME "$src" 2>/dev/null | head -1)
+    [ -n "$pk" ] || skip "no parent disk for $src"
+    DEV="/dev/$pk"
+    case "$pk" in mmcblk[0-9]*) ;; *) skip "/ is not on an eMMC ($src)" ;; esac
+fi
+
+if [ -b "$DEV" ]; then
+    [ "$(blockdev --getss "$DEV")" = 512 ] || skip "$DEV: sector size is not 512"
+    N=$(blockdev --getsz "$DEV")
+else
+    N=$(( $(stat -c %s "$DEV") / 512 ))     # image file (testing)
+fi
+
+T=$(mktemp -d)
+trap 'rm -rf "$T"' EXIT
+
+u()   { od -An -v --endian=little -t "u$1" -j "$2" -N "$1" "$3" | tr -d ' '; }
+crc() { cksum -a crc32b --raw "$1" | od -An -v -t x1 | tr -d ' \n'; }  # big-endian hex
+le32hex() { u 4 "$1" "$2" | xargs printf '%08x'; }                     # field as BE hex
+# Write a little-endian u32/u64 value at a byte offset of a file.
+put() { # bytes value offset file
+    v=$2; s=""; i=0
+    while [ $i -lt "$1" ]; do s="$s\\$(printf '%03o' $((v & 255)))"; v=$((v >> 8)); i=$((i + 1)); done
+    printf "$s" | dd of="$4" bs=1 seek="$3" conv=notrunc status=none
+}
+
+dd if="$DEV" of="$T/ph" bs=512 skip=1 count=1 status=none
+dd if="$DEV" of="$T/pe" bs=512 skip=2 count=32 status=none
+dd if="$DEV" of="$T/cur" bs=512 skip=$((N - 33)) count=33 status=none
+
+# --- Validate the primary GPT ---
+[ "$(head -c 8 "$T/ph")" = "EFI PART" ] || skip "no primary GPT signature"
+[ "$(u 4 12 "$T/ph")" = 92 ] || skip "unexpected primary header size"
+head -c 92 "$T/ph" > "$T/h92"; put 4 0 16 "$T/h92"
+[ "$(crc "$T/h92")" = "$(le32hex 16 "$T/ph")" ] || skip "primary header CRC bad"
+[ "$(u 8 24 "$T/ph")" = 1 ] || skip "primary MyLBA != 1"
+[ "$(u 8 32 "$T/ph")" = $((N - 1)) ] || skip "primary AlternateLBA != last sector ($((N - 1)))"
+FIRST=$(u 8 40 "$T/ph"); LAST=$(u 8 48 "$T/ph")
+[ "$LAST" = $((N - 34)) ] || skip "primary LastUsableLBA != $((N - 34))"
+[ "$(u 8 72 "$T/ph")" = 2 ] || skip "primary entries not at LBA 2"
+[ "$(u 4 80 "$T/ph")" = 128 ] && [ "$(u 4 84 "$T/ph")" = 128 ] || skip "not 128 x 128-byte entries"
+[ "$(crc "$T/pe")" = "$(le32hex 88 "$T/ph")" ] || skip "primary entries CRC bad"
+[ -z "$(tail -c +93 "$T/ph" | tr -d '\0')" ] || skip "primary header reserved bytes not zero"
+
+# Every used entry inside [FirstUsable, LastUsable]; the kernel agrees.
+od -An -v --endian=little -t u8 -w128 "$T/pe" | {
+    i=0; used=0; bad=""
+    while read -r t1 t2 _ _ start end _; do
+        i=$((i + 1))
+        [ "$t1" = 0 ] && [ "$t2" = 0 ] && continue
+        if [ "$start" -lt "$FIRST" ] || [ "$end" -gt "$LAST" ] || [ "$start" -gt "$end" ]; then
+            bad="p$i out of range"; break
+        fi
+        if [ -b "$DEV" ]; then
+            p=""
+            for q in /sys/class/block/"$(basename "$DEV")"/*/partition; do
+                [ "$(cat "$q")" = "$i" ] && p=${q%/partition}
+            done
+            if [ -z "$p" ] || [ "$(cat "$p/start")" != "$start" ] ||
+               [ "$(cat "$p/size")" != $((end - start + 1)) ]; then
+                bad="p$i differs from the kernel's partition table"; break
+            fi
+        fi
+        used=$((used + 1))
+    done
+    if [ -z "$bad" ] && [ -b "$DEV" ]; then
+        k=$(ls -d /sys/class/block/"$(basename "$DEV")"/*/partition 2>/dev/null | wc -l)
+        [ "$k" = "$used" ] || bad="kernel has $k partitions, primary GPT has $used"
+    fi
+    [ -z "$bad" ] || echo "$bad" > "$T/bad"
+}
+[ ! -f "$T/bad" ] || skip "$(cat "$T/bad")"
+
+# --- Build the backup: entries verbatim, then the header ---
+cp "$T/ph" "$T/bh"
+put 8 $((N - 1)) 24 "$T/bh"      # MyLBA
+put 8 1 32 "$T/bh"               # AlternateLBA
+put 8 $((N - 33)) 72 "$T/bh"     # PartitionEntryLBA = LastUsable + 1
+head -c 92 "$T/bh" > "$T/h92"; put 4 0 16 "$T/h92"
+c=$(crc "$T/h92")                # big-endian hex -> little-endian field
+put 4 $((0x$c)) 16 "$T/bh"
+cat "$T/pe" "$T/bh" > "$T/new"
+
+if cmp -s "$T/new" "$T/cur"; then
+    log "backup GPT on $DEV matches the primary"
+    exit 0
+fi
+
+log "backup GPT on $DEV does not match the primary; rewriting sectors $((N - 33))-$((N - 1))"
+[ -z "${DRY_RUN:-}" ] || { log "DRY_RUN set, not writing"; exit 0; }
+dd if="$T/new" of="$DEV" bs=512 seek=$((N - 33)) count=33 conv=notrunc,fsync status=none
+dd if="$DEV" of="$T/cur" bs=512 skip=$((N - 33)) count=33 status=none iflag=direct 2>/dev/null ||
+    dd if="$DEV" of="$T/cur" bs=512 skip=$((N - 33)) count=33 status=none
+cmp -s "$T/new" "$T/cur" || { log "ERROR: read-back of the new backup GPT differs"; exit 1; }
+log "backup GPT rewritten from the primary"
