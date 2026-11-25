@@ -523,6 +523,29 @@ EOF
     chroot "$ROOTFS" /bin/bash -c "systemctl enable openastro-usb-power.service" >/dev/null 2>&1
 fi
 
+# --- Per-unit machine-id (mainline only) ---
+# debootstrap's systemd postinst wrote a machine-id at build time and
+# dbus-daemon's postinst copied it to /var/lib/dbus/machine-id, so every unit
+# flashed from this image would share one ID (journal directory, D-Bus machine
+# UUID, NetworkManager DHCPv6 DUID / default-connection UUIDs).
+# Ship /etc/machine-id EMPTY: PID 1 generates a random ID on each unit's first
+# boot and writes it to disk (root is mounted rw), and the boot is NOT treated
+# as a "first boot". Do not use "uninitialized" instead: that makes PID 1 run
+# preset-all, and Debian's 90-systemd.preset then enables ssh.socket,
+# systemd-networkd (+ wait-online: a 2 min boot stall), nftables and more.
+# The D-Bus copy must go too: with /etc/machine-id empty, systemd adopts
+# /var/lib/dbus/machine-id (and libdbus reads it first), which would bring the
+# build ID right back. Replace it with the symlink dbus's own tmpfiles.d rule
+# expects (its "L" rule never replaces an existing file).
+# Must stay after every chroot apt/dpkg step above.
+if [ "$KERNEL_FLAVOR" = mainline ]; then
+    : > "$ROOTFS/etc/machine-id"
+    chmod 444 "$ROOTFS/etc/machine-id"
+    rm -f "$ROOTFS/var/lib/dbus/machine-id"
+    mkdir -p "$ROOTFS/var/lib/dbus"
+    ln -s /etc/machine-id "$ROOTFS/var/lib/dbus/machine-id"
+fi
+
 # --- Cleanup ---
 cleanup_binds
 trap - EXIT
