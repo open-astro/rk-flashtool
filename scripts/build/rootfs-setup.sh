@@ -328,6 +328,31 @@ if ! chroot "$ROOTFS" dpkg -s systemd-timesyncd >/dev/null 2>&1; then
 fi
 chroot "$ROOTFS" /bin/bash -c "systemctl enable systemd-timesyncd" || true
 
+# Mainline only: keep the RK809 RTC from moving the clock backwards. It has no
+# backup cell and resets to 2017-08-05 whenever power is removed. On 6.18
+# rtc_rk808 is a module that udev loads ~4 s into boot, and its registration
+# runs the kernel hctosys (CONFIG_RTC_HCTOSYS=y, rtc0) AFTER systemd restored
+# the last-known time from /var/lib/systemd/timesync/clock (and after
+# time-set.target). Offline (hotspot only) the unit then stays in 2017 and
+# timesyncd's periodic save writes 2017 back into that clock file. Without
+# the driver the clock only moves forward: PID1/timesyncd restore the saved
+# time (saved every 60 s, SaveIntervalSec default), NTP or the Ara client
+# sync corrects it. The rk808 regulators, power key and the 32 kHz clkout
+# that feeds the WiFi/BT LPO are separate drivers. Stock (4.19) has the RTC
+# built in, so its hctosys runs before systemd's restore; nothing to do there.
+# /usr/lib/clock-epoch: a freshly flashed unit (no clock file yet) starts no
+# earlier than the image build time instead of systemd's compiled-in epoch.
+if [ "$KERNEL_FLAVOR" = mainline ]; then
+    mkdir -p "$ROOTFS/etc/modprobe.d"
+    cat > "$ROOTFS/etc/modprobe.d/openastro-no-rtc.conf" << 'EOF'
+# OpenAstro: the RK809 RTC has no backup battery and resets to 2017 on power
+# loss; its hctosys would pull the clock back past systemd-timesyncd's saved
+# time. Blacklist stops udev autoload only; "modprobe rtc_rk808" still works.
+blacklist rtc_rk808
+EOF
+    touch "$ROOTFS/usr/lib/clock-epoch"
+fi
+
 # debootstrap installs no kernel, so /lib/modules may not exist; without it
 # cp -a would create lib/modules AS the version dir (flattened, modprobe
 # then finds nothing and WiFi never comes up).
