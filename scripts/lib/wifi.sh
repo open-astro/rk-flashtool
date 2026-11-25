@@ -35,6 +35,24 @@ pick_workdir() {
     return 1
 }
 
+# True if the mounted rootfs is the mainline-kernel flavor (Armbian 6.x).
+# Keyed first on etc/modprobe.d/openastro-regdom.conf, which rootfs-setup.sh
+# writes for every KERNEL_FLAVOR=mainline build (and which the mainline
+# branch below rewrites), so the gate follows the build flavor even if a
+# later kernel builds cfg80211 in. Fallback: cfg80211 as a loadable module.
+# Stock images (released or built) have neither: no regdom file, and the
+# 4.19 kernel builds cfg80211 in with no kernel/net modules at all. Works
+# for all callers (install, flash-rootfs, flash-all), including explicit
+# image paths with no RELEASE_FLAVOR. Args: <rootfs-mountpoint>
+_wifi_image_is_mainline() {
+    local ko
+    [ -f "$1/etc/modprobe.d/openastro-regdom.conf" ] && return 0
+    for ko in "$1"/lib/modules/*/kernel/net/wireless/cfg80211.ko*; do
+        [ -e "$ko" ] && return 0
+    done
+    return 1
+}
+
 # Write a NetworkManager AP-mode keyfile connection into the mounted rootfs.
 # Args: <rootfs-mountpoint> <ssid> <psk> <country>
 _wifi_write_profile() {
@@ -83,11 +101,25 @@ EOF
 
     # Regulatory domain (affects allowed channels / TX power).
     if [ -n "$country" ]; then
-        mkdir -p "$mnt/etc/NetworkManager/conf.d"
-        cat > "$mnt/etc/NetworkManager/conf.d/wifi-country.conf" << EOF
+        if _wifi_image_is_mainline "$mnt"; then
+            # Mainline: NetworkManager has no country setting (it logs
+            # "unknown key 'wifi.country'"), so set it in the kernel: cfg80211
+            # applies ieee80211_regdom as a user regulatory hint when it loads,
+            # before brcmfmac registers wlan0, and re-applies it after
+            # regulatory resets. A country picked later in AlpacaBridge
+            # (nl80211 user hint) takes precedence. Drop a stale NM file in
+            # case this (cached .img) image was configured before.
+            rm -f "$mnt/etc/NetworkManager/conf.d/wifi-country.conf"
+            mkdir -p "$mnt/etc/modprobe.d" || return 1
+            echo "options cfg80211 ieee80211_regdom=$country" \
+                > "$mnt/etc/modprobe.d/openastro-regdom.conf" || return 1
+        else
+            mkdir -p "$mnt/etc/NetworkManager/conf.d"
+            cat > "$mnt/etc/NetworkManager/conf.d/wifi-country.conf" << EOF
 [device]
 wifi.country=$country
 EOF
+        fi
         # The bcmdhd firmware applies its own country from the nvram ccode=
         # line, independent of the kernel regdom - keep both in sync or the
         # radio may disallow channels the user's market permits (the stock

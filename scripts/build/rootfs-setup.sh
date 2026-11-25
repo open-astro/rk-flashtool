@@ -387,6 +387,36 @@ if [ "$KERNEL_FLAVOR" = mainline ]; then
     ln -sf ../BCM4345C5.hcd "$ROOTFS/lib/firmware/brcm/BCM4345C5.hcd"
 fi
 
+# --- Wireless regulatory database (mainline only) ---
+# The stock-firmware copy above empties /lib/firmware (= /usr/lib/firmware),
+# deleting wireless-regdb's regulatory.db{,.p7s} and its alternatives links:
+# cfg80211 then logs "failed to load regulatory.db", stays on world (00), and
+# every country setting (flash-time, AlpacaBridge WiFi card) is ignored.
+# Reinstall the package, then select the upstream-signed copy: the Armbian
+# kernel (CFG80211_REQUIRE_SIGNED_REGDB + USE_KERNEL_REGDB_KEYS) trusts only
+# the sforshee/wens keys, not the benh@debian.org key on Debian's default
+# regulatory.db-debian (see /usr/share/doc/wireless-regdb/README.Debian).
+# Manual alternatives mode survives package upgrades. The stock 4.19 kernel
+# builds cfg80211 in; the stock image is left as released.
+if [ "$KERNEL_FLAVOR" = mainline ]; then
+    echo "Restoring the wireless regulatory database (upstream-signed)..."
+    chroot "$ROOTFS" /bin/bash -c "DEBIAN_FRONTEND=noninteractive apt-get install -y --reinstall wireless-regdb" \
+        || { echo "ERROR: could not reinstall wireless-regdb."; exit 1; }
+    chroot "$ROOTFS" update-alternatives --set regulatory.db /lib/firmware/regulatory.db-upstream
+    # Check inside the chroot: the links are absolute (/etc/alternatives/...)
+    # and would resolve against the build host's own files from out here.
+    for f in regulatory.db regulatory.db.p7s; do
+        chroot "$ROOTFS" test -s "/lib/firmware/$f" \
+            || { echo "ERROR: /lib/firmware/$f missing after reinstalling wireless-regdb."; exit 1; }
+    done
+    # Default regulatory domain, matching the ccode=US nvram default above.
+    # cfg80211 (a module here) applies it as a user hint when it loads, before
+    # brcmfmac brings up wlan0; scripts/lib/wifi.sh rewrites it with the
+    # flash-time country.
+    mkdir -p "$ROOTFS/etc/modprobe.d"
+    echo "options cfg80211 ieee80211_regdom=US" > "$ROOTFS/etc/modprobe.d/openastro-regdom.conf"
+fi
+
 # --- AlpacaBridge (from apt.openastro.net) ---
 # On by default since AlpacaBridge 3.4.0 shipped the WiFi manager. Needs
 # outbound network in the chroot, same as the dnsmasq safety net above.
