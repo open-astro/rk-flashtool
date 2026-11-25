@@ -140,6 +140,18 @@ PARTLABEL=rootfs     /              ext4    defaults,noatime                 0  
 PARTLABEL=swap       none           swap    sw,nofail                        0      0
 PARTLABEL=asiair     /mnt/data      vfat    uid=1000,gid=1000,nofail,noauto  0      0
 EOF
+# Mainline: grow the root ext4 to fill p7. rootfs-image.sh makes a 4 GiB
+# filesystem but p7 is 7 GiB, and the flash scripts write the image raw by
+# LBA. x-systemd.growfs makes systemd-fstab-generator pull in
+# systemd-growfs-root.service, which resizes the mounted ext4 online
+# (EXT4_IOC_RESIZE_FS) to the partition size on first boot. Later boots
+# it is a no-op. mount(8) ignores x-* options, so systemd-remount-fs is
+# unaffected. The stock flavor keeps its fstab unchanged.
+if [ "$KERNEL_FLAVOR" = mainline ]; then
+    sed -i -E 's|^(PARTLABEL=rootfs +/ +ext4 +)defaults,noatime +|\1defaults,noatime,x-systemd.growfs |' "$ROOTFS/etc/fstab"
+    grep -qE '^PARTLABEL=rootfs +/ +ext4 +defaults,noatime,x-systemd\.growfs ' "$ROOTFS/etc/fstab" || {
+        echo "ERROR: could not add x-systemd.growfs to the root fstab entry"; exit 1; }
+fi
 mkdir -p "$ROOTFS/mnt/data"
 
 # --- Locale ---
